@@ -1,33 +1,6 @@
 const Groq = require("groq-sdk");
 const axios = require("axios");
 
-/**
- * Extrai JSON de uma resposta que pode conter texto adicional
- */
-function extractJSON(text) {
-  try {
-    return JSON.parse(text);
-  } catch (e) {
-    // Continuar tentando extrair
-  }
-  
-  let cleaned = text.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
-  
-  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      return JSON.parse(jsonMatch[0]);
-    } catch (e) {
-      throw new Error('JSON inválido encontrado');
-    }
-  }
-  
-  throw new Error('Nenhum JSON encontrado na resposta');
-}
-
-/**
- * Busca no DuckDuckGo (free, sem API key)
- */
 async function searchDuckDuckGo(query) {
   try {
     console.log("🔍 Buscando no DuckDuckGo:", query);
@@ -67,7 +40,6 @@ async function searchDuckDuckGo(query) {
 
     console.log(`✅ Encontrados ${results.length} resultados`);
     return results.slice(0, 5);
-    
   } catch (error) {
     console.error("❌ Erro ao buscar no DuckDuckGo:", error.message);
     return [];
@@ -109,7 +81,9 @@ module.exports = async (req, res) => {
         ? webResults
             .map(
               (result, index) =>
-                `[${index + 1}] ${result.title}\n   ${result.snippet}\n   URL: ${result.url}`
+                `[${index + 1}] ${result.title}\n   ${
+                  result.snippet
+                }\n   URL: ${result.url}`
             )
             .join("\n\n")
         : "Nenhum resultado encontrado na web.";
@@ -144,38 +118,13 @@ INSTRUÇÕES:
       messages: [
         {
           role: "system",
-          content: "Você é um especialista em produtos sustentáveis. Use os resultados da busca web. Responda SEMPRE no formato JSON especificado.",
+          content: context?.role
+            ? `${context.role}. Use os resultados da busca web. IMPORTANTE: Responda APENAS com JSON válido, sem texto adicional.`
+            : "Você é um especialista em produtos sustentáveis. Use os resultados da busca web. IMPORTANTE: Responda APENAS com JSON válido.",
         },
         {
           role: "user",
-          content: `${enrichedPrompt}
-
-FORMATO OBRIGATÓRIO DA RESPOSTA (copie esta estrutura exatamente):
-
-{
-  "isSustainable": false,
-  "reason": "Breve explicação em português",
-  "alternatives": [
-    {
-      "name": "Nome completo do produto com marca e modelo",
-      "benefits": [
-        "Benefício 1 com dados mensuráveis",
-        "Benefício 2 com dados mensuráveis",
-        "Benefício 3 com dados mensuráveis"
-      ],
-      "searchTerms": [
-        "termo de busca 1",
-        "termo de busca 2"
-      ]
-    }
-  ]
-}
-
-CRÍTICO:
-- Não adicione texto antes ou depois do JSON
-- Use exatamente os campos mostrados
-- alternatives deve ter 2-3 produtos do tipo "${productType}"
-- Todos os campos são obrigatórios`,
+          content: enrichedPrompt + "\n\nRESPONDA APENAS COM JSON VÁLIDO.",
         },
       ],
       temperature: 0,
@@ -187,10 +136,9 @@ CRÍTICO:
 
     let parsedResponse;
     try {
-      parsedResponse = extractJSON(aiResponse);
+      parsedResponse = JSON.parse(aiResponse);
     } catch (parseError) {
       console.error("❌ Erro ao parsear:", parseError);
-      console.error("Resposta bruta:", aiResponse);
       return res.status(500).json({
         error: "Erro ao processar resposta da IA",
         rawResponse: aiResponse,
@@ -207,7 +155,6 @@ CRÍTICO:
     console.log("✅ Resposta processada com sucesso");
 
     return res.status(200).json(parsedResponse);
-    
   } catch (error) {
     console.error("❌ Erro no web-search-proxy:", error);
     return res.status(500).json({
