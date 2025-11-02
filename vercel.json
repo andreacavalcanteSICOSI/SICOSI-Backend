@@ -6,14 +6,14 @@
       "use": "@vercel/node"
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/groq-proxy",
-      "dest": "/api/groq-proxy.js"
+      "source": "/api/groq-proxy",
+      "destination": "/api/groq-proxy.js"
     },
     {
-      "src": "/api/web-search-proxy",
-      "dest": "/api/web-search-proxy.js"
+      "source": "/api/web-search-proxy",
+      "destination": "/api/web-search-proxy.js"
     }
   ],
   "headers": [
