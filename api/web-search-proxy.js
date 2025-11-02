@@ -2,6 +2,30 @@ const Groq = require("groq-sdk");
 const axios = require("axios");
 
 /**
+ * Extrai JSON de uma resposta que pode conter texto adicional
+ */
+function extractJSON(text) {
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    // Continuar tentando extrair
+  }
+  
+  let cleaned = text.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
+  
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      throw new Error('JSON inválido encontrado');
+    }
+  }
+  
+  throw new Error('Nenhum JSON encontrado na resposta');
+}
+
+/**
  * Busca no DuckDuckGo (free, sem API key)
  */
 async function searchDuckDuckGo(query) {
@@ -21,7 +45,6 @@ async function searchDuckDuckGo(query) {
     const data = response.data;
     const results = [];
 
-    // Processar RelatedTopics
     if (data.RelatedTopics && Array.isArray(data.RelatedTopics)) {
       data.RelatedTopics.forEach((topic) => {
         if (topic.Text && topic.FirstURL) {
@@ -34,7 +57,6 @@ async function searchDuckDuckGo(query) {
       });
     }
 
-    // Adicionar Abstract se disponível
     if (data.Abstract && data.AbstractURL) {
       results.unshift({
         title: data.Heading || "Resultado principal",
@@ -45,15 +67,13 @@ async function searchDuckDuckGo(query) {
 
     console.log(`✅ Encontrados ${results.length} resultados`);
     return results.slice(0, 5);
+    
   } catch (error) {
     console.error("❌ Erro ao buscar no DuckDuckGo:", error.message);
     return [];
   }
 }
 
-/**
- * Handler principal do proxy
- */
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -81,47 +101,38 @@ module.exports = async (req, res) => {
     console.log("📦 Produto:", productInfo.description);
     console.log("🏷️ Tipo:", productType);
 
-    // 1. BUSCAR PRODUTOS REAIS NA WEB
     const searchQuery = `${productType} sustentável certificado EPEAT Energy Star FSC 2024 2025`;
     const webResults = await searchDuckDuckGo(searchQuery);
 
-    // 2. FORMATAR RESULTADOS
     const webContext =
       webResults.length > 0
         ? webResults
             .map(
               (result, index) =>
-                `[${index + 1}] ${result.title}\n   ${
-                  result.snippet
-                }\n   URL: ${result.url}`
+                `[${index + 1}] ${result.title}\n   ${result.snippet}\n   URL: ${result.url}`
             )
             .join("\n\n")
         : "Nenhum resultado encontrado na web.";
 
     console.log("📊 Contexto web gerado");
 
-    // 3. PROMPT ENRIQUECIDO
     const enrichedPrompt = `${prompt}
 
 ═══════════════════════════════════════════════════════════════
-RESULTADOS DA BUSCA NA WEB (USE APENAS ESTES PRODUTOS REAIS):
+RESULTADOS DA BUSCA NA WEB:
 ═══════════════════════════════════════════════════════════════
 
 ${webContext}
 
 ═══════════════════════════════════════════════════════════════
-INSTRUÇÕES CRÍTICAS ADICIONAIS:
+INSTRUÇÕES:
 ═══════════════════════════════════════════════════════════════
 
-1. Use APENAS produtos mencionados nos resultados acima
-2. Se um resultado não for do tipo "${productType}", IGNORE-O
-3. Extraia marca, modelo e certificação de cada resultado
-4. Se não houver resultados relevantes, use seu conhecimento mas mantenha o tipo "${productType}"
-5. Priorize produtos com certificações ambientais
+1. Use produtos dos resultados acima
+2. Mantenha o tipo "${productType}"
+3. Extraia marca, modelo e certificação
+4. Priorize certificações ambientais`;
 
-LEMBRE-SE: TODAS as alternativas devem começar com "${productType}"`;
-
-    // 4. CHAMAR GROQ
     const groq = new Groq({
       apiKey: process.env.GROQ_API_KEY,
     });
@@ -133,38 +144,38 @@ LEMBRE-SE: TODAS as alternativas devem começar com "${productType}"`;
       messages: [
         {
           role: "system",
-          content:
-            "Você é um especialista em produtos sustentáveis. Use os resultados da busca web fornecidos. Responda SEMPRE no formato JSON especificado.",
+          content: "Você é um especialista em produtos sustentáveis. Use os resultados da busca web. Responda SEMPRE no formato JSON especificado.",
         },
         {
           role: "user",
           content: `${enrichedPrompt}
-            FORMATO OBRIGATÓRIO DA RESPOSTA (copie esta estrutura exatamente):
 
-            {
-              "isSustainable": false,
-              "reason": "Breve explicação em português",
-              "alternatives": [
-                {
-                  "name": "Nome completo do produto com marca e modelo",
-                  "benefits": [
-                    "Benefício 1 com dados mensuráveis",
-                    "Benefício 2 com dados mensuráveis",
-                    "Benefício 3 com dados mensuráveis"
-                  ],
-                  "searchTerms": [
-                    "termo de busca 1",
-                    "termo de busca 2"
-                  ]
-                }
-              ]
-            }
+FORMATO OBRIGATÓRIO DA RESPOSTA (copie esta estrutura exatamente):
 
-            CRÍTICO:
-            - Não adicione texto antes ou depois do JSON
-            - Use exatamente os campos mostrados
-            - alternatives deve ter 2-3 produtos do tipo "${productType}"
-            - Todos os campos são obrigatórios`,
+{
+  "isSustainable": false,
+  "reason": "Breve explicação em português",
+  "alternatives": [
+    {
+      "name": "Nome completo do produto com marca e modelo",
+      "benefits": [
+        "Benefício 1 com dados mensuráveis",
+        "Benefício 2 com dados mensuráveis",
+        "Benefício 3 com dados mensuráveis"
+      ],
+      "searchTerms": [
+        "termo de busca 1",
+        "termo de busca 2"
+      ]
+    }
+  ]
+}
+
+CRÍTICO:
+- Não adicione texto antes ou depois do JSON
+- Use exatamente os campos mostrados
+- alternatives deve ter 2-3 produtos do tipo "${productType}"
+- Todos os campos são obrigatórios`,
         },
       ],
       temperature: 0,
@@ -174,24 +185,18 @@ LEMBRE-SE: TODAS as alternativas devem começar com "${productType}"`;
 
     const aiResponse = completion.choices[0].message.content;
 
-    // 5. PARSEAR JSON
     let parsedResponse;
     try {
-      const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsedResponse = JSON.parse(jsonMatch[0]);
-      } else {
-        parsedResponse = JSON.parse(aiResponse);
-      }
+      parsedResponse = extractJSON(aiResponse);
     } catch (parseError) {
       console.error("❌ Erro ao parsear:", parseError);
+      console.error("Resposta bruta:", aiResponse);
       return res.status(500).json({
         error: "Erro ao processar resposta da IA",
         rawResponse: aiResponse,
       });
     }
 
-    // 6. ADICIONAR METADADOS
     parsedResponse._meta = {
       webResultsCount: webResults.length,
       searchQuery: searchQuery,
@@ -202,6 +207,7 @@ LEMBRE-SE: TODAS as alternativas devem começar com "${productType}"`;
     console.log("✅ Resposta processada com sucesso");
 
     return res.status(200).json(parsedResponse);
+    
   } catch (error) {
     console.error("❌ Erro no web-search-proxy:", error);
     return res.status(500).json({
