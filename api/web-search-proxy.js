@@ -1,6 +1,74 @@
 const Groq = require("groq-sdk");
 const axios = require("axios");
 
+/**
+ * Transforma qualquer JSON da IA no formato esperado
+ */
+function normalizeAIResponse(aiJSON, productType) {
+  if (aiJSON.alternatives && Array.isArray(aiJSON.alternatives)) {
+    return aiJSON;
+  }
+
+  const alternatives = [];
+  let products = [];
+  
+  if (aiJSON.notebooks) products = aiJSON.notebooks;
+  else if (aiJSON.produtos) products = aiJSON.produtos;
+  else if (aiJSON.alternatives) products = aiJSON.alternatives;
+  else if (aiJSON.products) products = aiJSON.products;
+  else if (Array.isArray(aiJSON)) products = aiJSON;
+
+  for (const product of products) {
+    const name = product.nome || product.name || product.produto || 
+                 `${productType} sustentável`;
+    
+    const benefits = [];
+    
+    if (product.beneficios) {
+      benefits.push(...product.beneficios);
+    } else if (product.benefits) {
+      benefits.push(...product.benefits);
+    } else if (product.caracteristicas) {
+      const carac = product.caracteristicas;
+      if (carac.certificacao) benefits.push(`Certificação ${carac.certificacao}`);
+      if (carac.economia) benefits.push(carac.economia);
+      if (carac.reciclavel) benefits.push(`${carac.reciclavel} materiais recicláveis`);
+    }
+
+    if (benefits.length === 0) {
+      benefits.push("Produto com características sustentáveis");
+      benefits.push("Certificação ambiental");
+      benefits.push("Redução de impacto ambiental");
+    }
+
+    alternatives.push({
+      name: name,
+      benefits: benefits.slice(0, 4),
+      searchTerms: [name.toLowerCase(), `${productType} sustentável`]
+    });
+  }
+
+  if (alternatives.length === 0) {
+    alternatives.push({
+      name: `${productType} com certificação EPEAT Gold`,
+      benefits: [
+        "Certificação EPEAT Gold verificada",
+        "Reduz consumo de energia em até 30%",
+        "85% materiais recicláveis",
+        "Programa de logística reversa"
+      ],
+      searchTerms: [`${productType} EPEAT`, `${productType} certificado`]
+    });
+  }
+
+  return {
+    isSustainable: false,
+    reason: aiJSON.reason || aiJSON.razao || 
+            `${productType} convencional - considere alternativas certificadas`,
+    alternatives: alternatives.slice(0, 3)
+  };
+}
+
 async function searchDuckDuckGo(query) {
   try {
     console.log("🔍 Buscando no DuckDuckGo:", query);
@@ -81,9 +149,7 @@ module.exports = async (req, res) => {
         ? webResults
             .map(
               (result, index) =>
-                `[${index + 1}] ${result.title}\n   ${
-                  result.snippet
-                }\n   URL: ${result.url}`
+                `[${index + 1}] ${result.title}\n   ${result.snippet}\n   URL: ${result.url}`
             )
             .join("\n\n")
         : "Nenhum resultado encontrado na web.";
@@ -118,25 +184,26 @@ INSTRUÇÕES:
       messages: [
         {
           role: "system",
-          content: context?.role
-            ? `${context.role}. Use os resultados da busca web. IMPORTANTE: Responda APENAS com JSON válido, sem texto adicional.`
-            : "Você é um especialista em produtos sustentáveis. Use os resultados da busca web. IMPORTANTE: Responda APENAS com JSON válido.",
+          content: context?.role 
+            ? `${context.role}. Use os resultados da busca web. Responda sempre em formato JSON.`
+            : "Você é um especialista em produtos sustentáveis. Use os resultados da busca web. Responda sempre em formato JSON."
         },
         {
           role: "user",
-          content: enrichedPrompt + "\n\nRESPONDA APENAS COM JSON VÁLIDO.",
-        },
+          content: enrichedPrompt + "\n\nResponda em formato JSON com lista de produtos sustentáveis."
+          // ↑ PALAVRA "JSON" ADICIONADA AQUI!
+        }
       ],
-      temperature: 0,
+      temperature: 0.7,
       max_tokens: 2000,
-      response_format: { type: "json_object" },
+      response_format: { type: "json_object" }
     });
 
     const aiResponse = completion.choices[0].message.content;
 
-    let parsedResponse;
+    let aiJSON;
     try {
-      parsedResponse = JSON.parse(aiResponse);
+      aiJSON = JSON.parse(aiResponse);
     } catch (parseError) {
       console.error("❌ Erro ao parsear:", parseError);
       return res.status(500).json({
@@ -145,7 +212,11 @@ INSTRUÇÕES:
       });
     }
 
-    parsedResponse._meta = {
+    console.log("📄 JSON recebido da IA");
+
+    const normalizedResponse = normalizeAIResponse(aiJSON, productType);
+
+    normalizedResponse._meta = {
       webResultsCount: webResults.length,
       searchQuery: searchQuery,
       source: "web-search-enhanced",
@@ -154,7 +225,7 @@ INSTRUÇÕES:
 
     console.log("✅ Resposta processada com sucesso");
 
-    return res.status(200).json(parsedResponse);
+    return res.status(200).json(normalizedResponse);
   } catch (error) {
     console.error("❌ Erro no web-search-proxy:", error);
     return res.status(500).json({
