@@ -1,0 +1,1042 @@
+{
+  "version": "3.0",
+  "description": "Comprehensive sustainability guidelines for product evaluation across all categories - SICOSI System",
+  "lastUpdated": "2025-11-06",
+  "source": "Based on ISO standards, EU ESPR, EMBRAPA guidelines, and global sustainability certifications",
+  
+  "categories": {
+    "electronics": {
+      "name": "Electronics & IT Equipment",
+      "keywords": ["smartphone", "laptop", "computer", "tablet", "monitor", "printer", "scanner", "camera", "headphones", "smartwatch", "electronic"],
+      "sustainability_criteria": {
+        "durability": {
+          "weight": 0.25,
+          "guidelines": [
+            "Product lifespan > 5 years",
+            "Modular design for easy component replacement",
+            "Availability of spare parts for at least 7 years",
+            "Software updates support for minimum 5 years",
+            "Robust construction resistant to wear"
+          ]
+        },
+        "repairability": {
+          "weight": 0.25,
+          "guidelines": [
+            "Standardized screws and fasteners (no proprietary tools)",
+            "Minimal use of adhesives",
+            "Accessible repair manuals and documentation",
+            "Repairability score > 7/10 (iFixit standard)",
+            "Replaceable battery and key components"
+          ]
+        },
+        "recyclability": {
+          "weight": 0.20,
+          "guidelines": [
+            "Easy disassembly for material separation",
+            "Clearly marked plastic types for recycling",
+            "Reduced use of rare earth metals",
+            "Take-back programs available",
+            "Recyclability rate > 85%"
+          ]
+        },
+        "energy_efficiency": {
+          "weight": 0.15,
+          "guidelines": [
+            "Energy Star certified or equivalent",
+            "Low standby power consumption (< 0.5W)",
+            "Energy-efficient components (LED displays, etc.)",
+            "Power management features"
+          ]
+        },
+        "materials": {
+          "weight": 0.15,
+          "guidelines": [
+            "Recycled content > 30%",
+            "No hazardous substances (RoHS compliant)",
+            "Conflict-free minerals certification",
+            "Reduced packaging with recyclable materials",
+            "Ocean-bound plastic use where applicable"
+          ]
+        }
+      },
+      "certifications": ["Energy Star", "EPEAT", "TCO Certified", "Blue Angel", "EU Ecolabel", "RoHS", "WEEE"],
+      "references": ["ISO 14001", "ESPR", "WEEE Directive", "RoHS Directive"]
+    },
+
+    "textiles_clothing": {
+      "name": "Textiles, Clothing & Footwear",
+      "keywords": ["clothing", "shirt", "pants", "dress", "shoes", "sneakers", "boots", "jacket", "coat", "textile", "fabric", "apparel", "fashion"],
+      "sustainability_criteria": {
+        "materials": {
+          "weight": 0.30,
+          "guidelines": [
+            "Organic or recycled fibers (> 50%)",
+            "No harmful chemicals (OEKO-TEX Standard 100)",
+            "Sustainable sourcing (BCI cotton, FSC viscose)",
+            "Biodegradable or recyclable materials",
+            "Natural fibers preferred over synthetic"
+          ]
+        },
+        "production": {
+          "weight": 0.25,
+          "guidelines": [
+            "Low water consumption in manufacturing",
+            "Renewable energy use in production",
+            "Reduced chemical dyes (natural or low-impact dyes)",
+            "Local or regional production to reduce transport emissions",
+            "Zero liquid discharge systems"
+          ]
+        },
+        "durability": {
+          "weight": 0.20,
+          "guidelines": [
+            "High-quality construction for longevity",
+            "Timeless design (not fast fashion)",
+            "Reinforced seams and quality stitching",
+            "Colorfastness and shape retention"
+          ]
+        },
+        "social_responsibility": {
+          "weight": 0.15,
+          "guidelines": [
+            "Fair wages and working conditions",
+            "No child labor",
+            "Safe working environments",
+            "Transparency in supply chain",
+            "Worker empowerment programs"
+          ]
+        },
+        "end_of_life": {
+          "weight": 0.10,
+          "guidelines": [
+            "Take-back or recycling programs",
+            "Mono-material design for easier recycling",
+            "Repair services available",
+            "Upcycling programs"
+          ]
+        }
+      },
+      "certifications": ["GOTS", "OEKO-TEX", "Fair Trade", "Bluesign", "Cradle to Cradle", "BCI", "FSC"],
+      "references": ["ESPR textile ban", "ISO 14001", "SA8000"]
+    },
+
+    "food_agriculture": {
+      "name": "Food & Agricultural Products",
+      "keywords": ["food", "coffee", "tea", "chocolate", "fruit", "vegetable", "meat", "fish", "dairy", "grain", "organic", "agriculture"],
+      "sustainability_criteria": {
+        "production_methods": {
+          "weight": 0.30,
+          "guidelines": [
+            "Organic farming (no synthetic pesticides/fertilizers)",
+            "Regenerative agriculture practices",
+            "Biodiversity conservation",
+            "Soil health management",
+            "Integrated pest management"
+          ]
+        },
+        "environmental_impact": {
+          "weight": 0.25,
+          "guidelines": [
+            "Low carbon footprint",
+            "Efficient water use",
+            "Minimal deforestation impact",
+            "Protection of natural habitats",
+            "Reduced greenhouse gas emissions"
+          ]
+        },
+        "social_ethics": {
+          "weight": 0.20,
+          "guidelines": [
+            "Fair wages for farmers and workers",
+            "Safe working conditions",
+            "Support for local communities",
+            "No child or forced labor",
+            "Gender equality"
+          ]
+        },
+        "traceability": {
+          "weight": 0.15,
+          "guidelines": [
+            "Clear supply chain transparency",
+            "Origin labeling",
+            "Certification verification available",
+            "Blockchain or digital tracking"
+          ]
+        },
+        "packaging": {
+          "weight": 0.10,
+          "guidelines": [
+            "Minimal packaging",
+            "Recyclable or compostable materials",
+            "No single-use plastics",
+            "Reduced food waste"
+          ]
+        }
+      },
+      "certifications": ["Organic", "Fairtrade", "Rainforest Alliance", "UTZ", "MSC", "ASC", "4C"],
+      "references": ["FAO Guidelines", "ISO 14001", "IFOAM"]
+    },
+
+    "construction_materials": {
+      "name": "Construction Materials & Building Products",
+      "keywords": ["cement", "concrete", "steel", "wood", "lumber", "insulation", "paint", "tiles", "roofing", "construction", "building"],
+      "sustainability_criteria": {
+        "materials_sourcing": {
+          "weight": 0.25,
+          "guidelines": [
+            "Recycled content > 30%",
+            "Sustainably sourced raw materials",
+            "Low embodied carbon",
+            "Regional materials (< 500km transport)",
+            "Renewable materials preferred"
+          ]
+        },
+        "environmental_impact": {
+          "weight": 0.25,
+          "guidelines": [
+            "Low VOC emissions",
+            "Energy-efficient production",
+            "Minimal water consumption",
+            "Reduced waste in production",
+            "Carbon sequestration potential"
+          ]
+        },
+        "durability": {
+          "weight": 0.20,
+          "guidelines": [
+            "Long lifespan (> 25 years)",
+            "Weather and wear resistance",
+            "Low maintenance requirements",
+            "Structural integrity over time"
+          ]
+        },
+        "energy_performance": {
+          "weight": 0.15,
+          "guidelines": [
+            "High thermal insulation",
+            "Energy-efficient in use phase",
+            "Contribution to building energy efficiency",
+            "Passive design compatibility"
+          ]
+        },
+        "end_of_life": {
+          "weight": 0.15,
+          "guidelines": [
+            "Recyclable or reusable",
+            "Non-toxic disposal",
+            "Deconstruction-friendly design",
+            "Circular economy integration"
+          ]
+        }
+      },
+      "certifications": ["LEED", "BREEAM", "Cradle to Cradle", "FSC", "EPD", "Green Guard"],
+      "references": ["ISO 21930", "ISO 14001", "EU Green Building"]
+    },
+
+    "furniture": {
+      "name": "Furniture & Home Furnishings",
+      "keywords": ["furniture", "chair", "table", "desk", "sofa", "bed", "cabinet", "shelf", "mattress"],
+      "sustainability_criteria": {
+        "materials": {
+          "weight": 0.30,
+          "guidelines": [
+            "Sustainably sourced wood (FSC/PEFC)",
+            "Recycled or recyclable materials",
+            "No harmful chemicals (formaldehyde-free)",
+            "Natural or low-impact finishes",
+            "Renewable materials"
+          ]
+        },
+        "durability": {
+          "weight": 0.25,
+          "guidelines": [
+            "High-quality construction",
+            "Timeless design",
+            "Repairable components",
+            "Warranty > 5 years",
+            "Modular design"
+          ]
+        },
+        "production": {
+          "weight": 0.20,
+          "guidelines": [
+            "Energy-efficient manufacturing",
+            "Minimal waste production",
+            "Local or regional production",
+            "Fair labor practices",
+            "Low VOC emissions"
+          ]
+        },
+        "end_of_life": {
+          "weight": 0.15,
+          "guidelines": [
+            "Easy disassembly for recycling",
+            "Take-back programs",
+            "Recyclable or biodegradable materials",
+            "Refurbishment options"
+          ]
+        },
+        "packaging": {
+          "weight": 0.10,
+          "guidelines": [
+            "Minimal packaging",
+            "Recyclable packaging materials",
+            "Efficient transport design",
+            "Flat-pack design"
+          ]
+        }
+      },
+      "certifications": ["FSC", "PEFC", "Green Guard", "Cradle to Cradle", "EU Ecolabel"],
+      "references": ["ESPR 2025-2030", "ISO 14001"]
+    },
+
+    "cosmetics_personal_care": {
+      "name": "Cosmetics & Personal Care Products",
+      "keywords": ["cosmetics", "shampoo", "soap", "lotion", "cream", "makeup", "perfume", "deodorant", "toothpaste", "skincare"],
+      "sustainability_criteria": {
+        "ingredients": {
+          "weight": 0.35,
+          "guidelines": [
+            "Natural and organic ingredients (> 70%)",
+            "No harmful chemicals (parabens, phthalates, etc.)",
+            "Biodegradable formulations",
+            "No microplastics",
+            "Sustainably sourced ingredients"
+          ]
+        },
+        "animal_welfare": {
+          "weight": 0.20,
+          "guidelines": [
+            "Cruelty-free (no animal testing)",
+            "Vegan formulations preferred",
+            "No animal-derived ingredients",
+            "Certified by recognized organizations"
+          ]
+        },
+        "packaging": {
+          "weight": 0.20,
+          "guidelines": [
+            "Recyclable or refillable packaging",
+            "Minimal packaging",
+            "Post-consumer recycled content",
+            "Biodegradable packaging options",
+            "Zero-waste packaging systems"
+          ]
+        },
+        "production": {
+          "weight": 0.15,
+          "guidelines": [
+            "Energy-efficient manufacturing",
+            "Water conservation",
+            "Fair trade ingredients",
+            "Local sourcing where possible"
+          ]
+        },
+        "transparency": {
+          "weight": 0.10,
+          "guidelines": [
+            "Full ingredient disclosure",
+            "Supply chain transparency",
+            "Third-party certifications",
+            "Clear sustainability claims"
+          ]
+        }
+      },
+      "certifications": ["COSMOS", "Ecocert", "Leaping Bunny", "Vegan Society", "USDA Organic", "Natrue"],
+      "references": ["EU Cosmetics Regulation", "ISO 16128"]
+    },
+
+    "toys_games": {
+      "name": "Toys & Games",
+      "keywords": ["toy", "game", "puzzle", "doll", "action figure", "board game", "educational toy", "children"],
+      "sustainability_criteria": {
+        "materials": {
+          "weight": 0.30,
+          "guidelines": [
+            "Non-toxic materials (phthalate-free, BPA-free)",
+            "Sustainably sourced wood (FSC certified)",
+            "Recycled plastics or bio-based plastics",
+            "Natural materials preferred",
+            "No harmful chemicals"
+          ]
+        },
+        "safety": {
+          "weight": 0.25,
+          "guidelines": [
+            "Meets safety standards (EN71, ASTM F963)",
+            "No small parts for young children",
+            "Durable construction",
+            "Non-toxic paints and finishes",
+            "Age-appropriate design"
+          ]
+        },
+        "durability": {
+          "weight": 0.20,
+          "guidelines": [
+            "Long-lasting quality",
+            "Timeless design",
+            "Repairable components",
+            "Multi-generational use potential"
+          ]
+        },
+        "educational_value": {
+          "weight": 0.15,
+          "guidelines": [
+            "Promotes learning and development",
+            "Encourages creativity",
+            "Open-ended play",
+            "STEM/STEAM focus"
+          ]
+        },
+        "packaging": {
+          "weight": 0.10,
+          "guidelines": [
+            "Minimal packaging",
+            "Recyclable materials",
+            "No plastic windows",
+            "Reusable packaging"
+          ]
+        }
+      },
+      "certifications": ["FSC", "GOTS", "Oeko-Tex", "CE Mark", "Fair Trade"],
+      "references": ["EN71", "ASTM F963", "ISO 8124"]
+    },
+
+    "medical_equipment": {
+      "name": "Medical Equipment & Healthcare Products",
+      "keywords": ["medical", "healthcare", "hospital", "diagnostic", "surgical", "medical device", "equipment"],
+      "sustainability_criteria": {
+        "safety_efficacy": {
+          "weight": 0.35,
+          "guidelines": [
+            "Meets medical device regulations",
+            "Clinical efficacy proven",
+            "Patient safety prioritized",
+            "Biocompatibility tested",
+            "Sterilization compatibility"
+          ]
+        },
+        "durability": {
+          "weight": 0.20,
+          "guidelines": [
+            "Long operational lifespan",
+            "Reusable where appropriate",
+            "Robust construction",
+            "Maintenance and calibration support",
+            "Spare parts availability"
+          ]
+        },
+        "materials": {
+          "weight": 0.15,
+          "guidelines": [
+            "Biocompatible materials",
+            "Reduced use of single-use plastics",
+            "Recyclable components where safe",
+            "Non-toxic materials",
+            "Sustainable sourcing"
+          ]
+        },
+        "energy_efficiency": {
+          "weight": 0.15,
+          "guidelines": [
+            "Energy-efficient operation",
+            "Low standby power",
+            "Renewable energy compatible",
+            "Power management features"
+          ]
+        },
+        "end_of_life": {
+          "weight": 0.15,
+          "guidelines": [
+            "Safe disposal protocols",
+            "Recycling programs",
+            "Take-back schemes",
+            "Refurbishment options",
+            "Proper waste segregation"
+          ]
+        }
+      },
+      "certifications": ["CE Mark", "FDA Approval", "ISO 13485", "ISO 14001"],
+      "references": ["MDR", "IVDR", "ISO 13485", "ISO 14971"]
+    },
+
+    "office_supplies": {
+      "name": "Office Supplies & Stationery",
+      "keywords": ["paper", "pen", "pencil", "notebook", "folder", "stapler", "office", "stationery"],
+      "sustainability_criteria": {
+        "materials": {
+          "weight": 0.35,
+          "guidelines": [
+            "Recycled content > 50%",
+            "FSC-certified paper products",
+            "Non-toxic inks and adhesives",
+            "Biodegradable materials",
+            "Renewable resources"
+          ]
+        },
+        "durability": {
+          "weight": 0.25,
+          "guidelines": [
+            "Reusable products preferred",
+            "Refillable options",
+            "Long-lasting quality",
+            "Multi-use design"
+          ]
+        },
+        "packaging": {
+          "weight": 0.20,
+          "guidelines": [
+            "Minimal packaging",
+            "Recyclable packaging",
+            "Bulk purchasing options",
+            "Plastic-free packaging"
+          ]
+        },
+        "production": {
+          "weight": 0.20,
+          "guidelines": [
+            "Energy-efficient manufacturing",
+            "Low water consumption",
+            "Reduced chemical use",
+            "Local production"
+          ]
+        }
+      },
+      "certifications": ["FSC", "Blue Angel", "EU Ecolabel", "Nordic Swan"],
+      "references": ["ISO 14001", "EPA Guidelines"]
+    },
+
+    "cleaning_products": {
+      "name": "Cleaning Products & Household Chemicals",
+      "keywords": ["detergent", "soap", "cleaner", "disinfectant", "bleach", "cleaning", "household"],
+      "sustainability_criteria": {
+        "ingredients": {
+          "weight": 0.35,
+          "guidelines": [
+            "Biodegradable ingredients",
+            "Plant-based formulations",
+            "No harmful chemicals",
+            "Non-toxic to aquatic life",
+            "Phosphate-free"
+          ]
+        },
+        "packaging": {
+          "weight": 0.25,
+          "guidelines": [
+            "Recyclable packaging",
+            "Concentrated formulas",
+            "Refill options available",
+            "Reduced plastic use",
+            "Post-consumer recycled content"
+          ]
+        },
+        "effectiveness": {
+          "weight": 0.20,
+          "guidelines": [
+            "Effective at lower temperatures",
+            "Efficient use",
+            "Multi-purpose applications",
+            "Low water consumption"
+          ]
+        },
+        "certifications": {
+          "weight": 0.20,
+          "guidelines": [
+            "Eco-label certified",
+            "Cruelty-free",
+            "Vegan formulations",
+            "Hypoallergenic"
+          ]
+        }
+      },
+      "certifications": ["EU Ecolabel", "Nordic Swan", "Ecocert", "Leaping Bunny", "EPA Safer Choice"],
+      "references": ["ISO 14001", "EU Detergents Regulation"]
+    },
+
+    "automotive": {
+      "name": "Automotive & Transportation",
+      "keywords": ["car", "vehicle", "automobile", "truck", "motorcycle", "electric vehicle", "hybrid"],
+      "sustainability_criteria": {
+        "emissions": {
+          "weight": 0.30,
+          "guidelines": [
+            "Electric or hybrid preferred",
+            "Low CO2 emissions (< 95g/km EU)",
+            "Euro 6 or better",
+            "Alternative fuels",
+            "Zero emission capable"
+          ]
+        },
+        "efficiency": {
+          "weight": 0.25,
+          "guidelines": [
+            "High fuel efficiency",
+            "Lightweight design",
+            "Aerodynamic optimization",
+            "Energy recovery systems",
+            "Efficient powertrains"
+          ]
+        },
+        "materials": {
+          "weight": 0.20,
+          "guidelines": [
+            "Recycled materials",
+            "Recyclable components",
+            "Reduced rare materials",
+            "Sustainable interiors",
+            "Bio-based materials"
+          ]
+        },
+        "durability": {
+          "weight": 0.15,
+          "guidelines": [
+            "Long vehicle lifespan",
+            "Corrosion resistance",
+            "Quality construction",
+            "Warranty > 5 years",
+            "Maintenance support"
+          ]
+        },
+        "end_of_life": {
+          "weight": 0.10,
+          "guidelines": [
+            "Recyclability > 85%",
+            "Battery recycling (EVs)",
+            "Take-back schemes",
+            "Remanufacturing programs"
+          ]
+        }
+      },
+      "certifications": ["Euro NCAP", "ISO 14001", "ISO 14040"],
+      "references": ["EU CO2 Standards", "ESPR future"]
+    },
+
+    "digital_products_software": {
+      "name": "Digital Products & Software",
+      "keywords": ["software", "app", "application", "digital service", "cloud", "SaaS", "platform", "AI", "machine learning"],
+      "sustainability_criteria": {
+        "energy_efficiency": {
+          "weight": 0.40,
+          "guidelines": [
+            "Optimized code for low energy consumption",
+            "Efficient algorithms",
+            "Green hosting (renewable energy data centers)",
+            "Carbon-aware computing",
+            "Edge computing to reduce data transfer",
+            "Efficient AI models (avoid over-parameterization)"
+          ]
+        },
+        "infrastructure": {
+          "weight": 0.25,
+          "guidelines": [
+            "Data centers powered by renewable energy",
+            "PUE (Power Usage Effectiveness) < 1.2",
+            "Server utilization > 70%",
+            "Cooling efficiency optimization",
+            "Carbon offset programs"
+          ]
+        },
+        "design": {
+          "weight": 0.20,
+          "guidelines": [
+            "Lightweight applications",
+            "Minimal data storage requirements",
+            "Efficient data compression",
+            "Reduced bandwidth consumption",
+            "Dark mode options (OLED energy saving)"
+          ]
+        },
+        "longevity": {
+          "weight": 0.10,
+          "guidelines": [
+            "Long-term support and updates",
+            "Backward compatibility",
+            "No planned obsolescence",
+            "Open standards",
+            "Interoperability"
+          ]
+        },
+        "transparency": {
+          "weight": 0.05,
+          "guidelines": [
+            "Carbon footprint disclosure",
+            "Energy consumption metrics",
+            "Sustainability reporting",
+            "Green software certification"
+          ]
+        }
+      },
+      "certifications": ["Green Software Foundation", "ISO 14001", "Carbon Neutral Certification"],
+      "references": ["Green Software Principles", "EU Code of Conduct for Data Centres"],
+      "special_notes": {
+        "ai_ml_concerns": [
+          "Large Language Models (LLMs) like GPT consume significant energy",
+          "Training a single large AI model can emit as much CO2 as 5 cars over their lifetime",
+          "Prefer smaller, specialized models over general-purpose large models",
+          "Use model compression and quantization techniques",
+          "Implement inference optimization",
+          "Consider federated learning to reduce centralized computing"
+        ],
+        "blockchain_concerns": [
+          "Proof-of-Work blockchains extremely energy-intensive",
+          "Prefer Proof-of-Stake or other efficient consensus mechanisms",
+          "Consider environmental impact of cryptocurrency mining"
+        ],
+        "streaming_concerns": [
+          "Video streaming accounts for significant internet traffic and energy",
+          "Optimize video quality based on device and network",
+          "Use efficient codecs (AV1, HEVC)",
+          "Implement adaptive bitrate streaming"
+        ]
+      }
+    },
+
+    "cloud_services": {
+      "name": "Cloud Services & Data Centers",
+      "keywords": ["cloud", "hosting", "server", "data center", "storage", "computing", "infrastructure"],
+      "sustainability_criteria": {
+        "energy_source": {
+          "weight": 0.35,
+          "guidelines": [
+            "100% renewable energy",
+            "Power Purchase Agreements (PPAs) for renewables",
+            "On-site renewable generation",
+            "Carbon-free energy 24/7",
+            "Renewable Energy Certificates (RECs)"
+          ]
+        },
+        "efficiency": {
+          "weight": 0.30,
+          "guidelines": [
+            "PUE < 1.2",
+            "WUE (Water Usage Effectiveness) < 1.0",
+            "High server utilization",
+            "Efficient cooling systems",
+            "Free cooling where possible"
+          ]
+        },
+        "hardware": {
+          "weight": 0.20,
+          "guidelines": [
+            "Energy-efficient servers",
+            "Extended hardware lifespan",
+            "Responsible e-waste management",
+            "Hardware recycling programs",
+            "Circular economy practices"
+          ]
+        },
+        "water_usage": {
+          "weight": 0.10,
+          "guidelines": [
+            "Water-efficient cooling",
+            "Rainwater harvesting",
+            "Water recycling systems",
+            "Location in water-abundant regions"
+          ]
+        },
+        "transparency": {
+          "weight": 0.05,
+          "guidelines": [
+            "Public sustainability reports",
+            "Carbon footprint disclosure",
+            "Real-time energy dashboards",
+            "Third-party audits"
+          ]
+        }
+      },
+      "certifications": ["ISO 14001", "ISO 50001", "LEED", "EU Code of Conduct"],
+      "references": ["Green Grid", "EU Code of Conduct for Data Centres"]
+    },
+
+    "packaging": {
+      "name": "Packaging Materials",
+      "keywords": ["packaging", "box", "container", "wrapper", "bag", "bottle", "can"],
+      "sustainability_criteria": {
+        "materials": {
+          "weight": 0.35,
+          "guidelines": [
+            "Recycled content > 70%",
+            "Recyclable materials",
+            "Biodegradable or compostable",
+            "Renewable materials",
+            "Minimal plastic use"
+          ]
+        },
+        "design": {
+          "weight": 0.25,
+          "guidelines": [
+            "Minimal packaging",
+            "Right-sized packaging",
+            "Mono-material design",
+            "Easy to separate components",
+            "Reusable design"
+          ]
+        },
+        "production": {
+          "weight": 0.20,
+          "guidelines": [
+            "Energy-efficient manufacturing",
+            "Low water consumption",
+            "Reduced emissions",
+            "Local production"
+          ]
+        },
+        "end_of_life": {
+          "weight": 0.20,
+          "guidelines": [
+            "Widely recyclable",
+            "Clear recycling instructions",
+            "Compostable certification",
+            "Take-back programs"
+          ]
+        }
+      },
+      "certifications": ["FSC", "Cradle to Cradle", "OK Compost", "EU Ecolabel"],
+      "references": ["EU Packaging Directive", "ISO 18601"]
+    },
+
+    "energy_utilities": {
+      "name": "Energy & Utilities",
+      "keywords": ["electricity", "gas", "energy", "utility", "power", "renewable energy", "solar", "wind"],
+      "sustainability_criteria": {
+        "energy_source": {
+          "weight": 0.45,
+          "guidelines": [
+            "Renewable energy sources",
+            "Low carbon intensity",
+            "No fossil fuels",
+            "Certified green energy",
+            "Local generation"
+          ]
+        },
+        "efficiency": {
+          "weight": 0.25,
+          "guidelines": [
+            "High conversion efficiency",
+            "Minimal transmission losses",
+            "Smart grid integration",
+            "Demand response programs"
+          ]
+        },
+        "environmental_impact": {
+          "weight": 0.20,
+          "guidelines": [
+            "Low emissions",
+            "Minimal land use",
+            "Wildlife protection",
+            "Water conservation",
+            "Biodiversity preservation"
+          ]
+        },
+        "transparency": {
+          "weight": 0.10,
+          "guidelines": [
+            "Clear energy source disclosure",
+            "Carbon intensity reporting",
+            "Sustainability certifications",
+            "Third-party verification"
+          ]
+        }
+      },
+      "certifications": ["Green-e", "EKOenergy", "ISO 50001"],
+      "references": ["EU Renewable Energy Directive", "ISO 50001"]
+    },
+
+    "financial_services": {
+      "name": "Financial Services & Banking",
+      "keywords": ["bank", "insurance", "investment", "loan", "credit", "financial", "fund"],
+      "sustainability_criteria": {
+        "investment_policy": {
+          "weight": 0.35,
+          "guidelines": [
+            "ESG integration in investments",
+            "Exclusion of fossil fuels",
+            "Green bonds and sustainable finance",
+            "Impact investing",
+            "Climate risk assessment"
+          ]
+        },
+        "operations": {
+          "weight": 0.25,
+          "guidelines": [
+            "Carbon-neutral operations",
+            "Green buildings",
+            "Paperless processes",
+            "Renewable energy use",
+            "Sustainable procurement"
+          ]
+        },
+        "transparency": {
+          "weight": 0.20,
+          "guidelines": [
+            "Sustainability reporting",
+            "TCFD disclosure",
+            "Portfolio carbon footprint",
+            "Impact measurement"
+          ]
+        },
+        "products": {
+          "weight": 0.20,
+          "guidelines": [
+            "Green financial products",
+            "Sustainable investment options",
+            "Climate-aligned lending",
+            "ESG ratings integration"
+          ]
+        }
+      },
+      "certifications": ["B Corp", "ISO 14001", "TCFD"],
+      "references": ["EU Taxonomy", "TCFD", "SFDR"]
+    },
+
+    "travel_tourism": {
+      "name": "Travel & Tourism",
+      "keywords": ["hotel", "travel", "tourism", "accommodation", "resort", "airline", "cruise"],
+      "sustainability_criteria": {
+        "environmental_management": {
+          "weight": 0.30,
+          "guidelines": [
+            "Energy efficiency",
+            "Water conservation",
+            "Waste reduction",
+            "Renewable energy use",
+            "Carbon offset programs"
+          ]
+        },
+        "local_community": {
+          "weight": 0.25,
+          "guidelines": [
+            "Local employment",
+            "Fair wages",
+            "Community engagement",
+            "Cultural preservation",
+            "Local sourcing"
+          ]
+        },
+        "biodiversity": {
+          "weight": 0.20,
+          "guidelines": [
+            "Wildlife protection",
+            "Habitat conservation",
+            "Responsible wildlife tourism",
+            "No exploitation of animals"
+          ]
+        },
+        "operations": {
+          "weight": 0.15,
+          "guidelines": [
+            "Sustainable food sourcing",
+            "Eco-friendly amenities",
+            "Green transportation options",
+            "Paperless operations"
+          ]
+        },
+        "transparency": {
+          "weight": 0.10,
+          "guidelines": [
+            "Sustainability certifications",
+            "Carbon footprint disclosure",
+            "Guest education programs"
+          ]
+        }
+      },
+      "certifications": ["Green Key", "EarthCheck", "Travelife", "Green Globe", "ISO 21401"],
+      "references": ["ISO 21401", "GSTC Criteria"]
+    }
+  },
+
+  "general_sustainability_principles": {
+    "circular_economy": [
+      "Design for longevity and durability",
+      "Enable repair, reuse, and refurbishment",
+      "Use recycled and recyclable materials",
+      "Minimize waste throughout lifecycle",
+      "Implement take-back and recycling programs",
+      "Product-as-a-service models",
+      "Sharing economy integration"
+    ],
+    "carbon_footprint": [
+      "Measure and reduce greenhouse gas emissions",
+      "Use renewable energy in production",
+      "Optimize transportation and logistics",
+      "Carbon offset programs for unavoidable emissions",
+      "Science-based targets (SBTi)",
+      "Net-zero commitments"
+    ],
+    "social_responsibility": [
+      "Fair wages and working conditions",
+      "No child or forced labor",
+      "Safe working environments",
+      "Support for local communities",
+      "Diversity and inclusion in workforce",
+      "Gender equality",
+      "Worker empowerment"
+    ],
+    "transparency": [
+      "Clear supply chain visibility",
+      "Third-party certifications",
+      "Environmental Product Declarations (EPD)",
+      "Digital Product Passports (DPP)",
+      "Public sustainability reporting",
+      "Blockchain traceability",
+      "Open data initiatives"
+    ],
+    "biodiversity": [
+      "No deforestation",
+      "Habitat protection",
+      "Wildlife conservation",
+      "Sustainable land use",
+      "Ecosystem restoration",
+      "Pollinator protection"
+    ],
+    "water_stewardship": [
+      "Efficient water use",
+      "Water recycling",
+      "Pollution prevention",
+      "Watershed protection",
+      "Water-stressed region awareness"
+    ]
+  },
+
+  "evaluation_methodology": {
+    "description": "How to use these guidelines for product evaluation",
+    "steps": [
+      "1. Extract product information from user context (text selection, page title, etc.)",
+      "2. Use web search to gather additional product details",
+      "3. Identify the most relevant product category based on keywords",
+      "4. Apply category-specific sustainability criteria with their weights",
+      "5. Check for recognized certifications mentioned",
+      "6. Evaluate against general sustainability principles",
+      "7. Use Groq LLM to analyze and score the product",
+      "8. Search for sustainable alternatives in the same category",
+      "9. Provide ranked recommendations with justifications"
+    ],
+    "scoring": {
+      "excellent": "Meets > 80% of criteria with relevant certifications - Highly sustainable",
+      "good": "Meets 60-80% of criteria - Good sustainability performance",
+      "acceptable": "Meets 40-60% of criteria - Moderate sustainability",
+      "poor": "Meets < 40% of criteria - Low sustainability, alternatives recommended"
+    },
+    "llm_prompt_template": "Analyze this product: {product_name}. Category: {category}. Context: {context}. Evaluate against these sustainability criteria: {criteria}. Check for certifications: {certifications}. Provide: 1) Sustainability score (0-100), 2) Strengths, 3) Weaknesses, 4) Three sustainable alternatives with justification."
+  },
+
+  "metadata": {
+    "total_categories": 18,
+    "coverage": "Comprehensive - physical products, digital products, services",
+    "standards_referenced": [
+      "ISO 14001 - Environmental Management",
+      "ISO 26000 - Social Responsibility",
+      "ISO 50001 - Energy Management",
+      "ISO 21930 - Sustainability in Buildings",
+      "ESPR - Ecodesign for Sustainable Products Regulation",
+      "EU Green Deal",
+      "UN SDGs",
+      "TCFD - Task Force on Climate-related Financial Disclosures"
+    ],
+    "special_focus": {
+      "digital_sustainability": "Includes guidelines for software, AI/ML, cloud services, and data centers - addressing energy consumption of LLMs and blockchain",
+      "embrapa_integration": "Forest products guidelines can be extended from EMBRAPA SICOSIFlorestas document",
+      "dynamic_evaluation": "System uses LLM to understand context and apply guidelines intelligently, not hardcoded product matching"
+    }
+  }
+}
