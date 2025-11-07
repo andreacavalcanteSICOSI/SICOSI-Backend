@@ -1,28 +1,27 @@
 {
   "name": "sicosi-backend",
-  "version": "2.0.0",
-  "description": "Backend APIs para SICOSI - Sistema de Compras Sustentáveis Inteligente",
-  "main": "index.js",
+  "version": "3.0.0",
+  "description": "SICOSI Backend - Next.js API Routes with TypeScript",
   "scripts": {
-    "dev": "vercel dev",
-    "deploy": "vercel --prod"
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
   },
-  "keywords": [
-    "sustainability",
-    "procurement",
-    "api",
-    "groq",
-    "tavily",
-    "ai"
-  ],
-  "author": "Andre Cavalcante",
-  "license": "MIT",
   "dependencies": {
-    "groq-sdk": "^0.7.0",
-    "axios": "^1.6.0",
-    "tavily": "^0.2.0"
+    "axios": "^1.13.2",
+    "groq-sdk": "^0.3.0",
+    "next": "^14.0.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
-  "engines": {
-    "node": ">=18.x"
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "@types/react": "^18.2.46",
+    "@types/react-dom": "^18.2.18",
+    "eslint": "^8.56.0",
+    "eslint-config-next": "^14.0.4",
+    "typescript": "^5.3.3"
   }
 }
