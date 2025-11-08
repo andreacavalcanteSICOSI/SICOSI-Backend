@@ -3,11 +3,22 @@
   "description": "Comprehensive sustainability guidelines for product evaluation across all categories - SICOSI System",
   "lastUpdated": "2025-11-06",
   "source": "Based on ISO standards, EU ESPR, EMBRAPA guidelines, and global sustainability certifications",
-  
   "categories": {
     "electronics": {
       "name": "Electronics & IT Equipment",
-      "keywords": ["smartphone", "laptop", "computer", "tablet", "monitor", "printer", "scanner", "camera", "headphones", "smartwatch", "electronic"],
+      "keywords": [
+        "smartphone",
+        "laptop",
+        "computer",
+        "tablet",
+        "monitor",
+        "printer",
+        "scanner",
+        "camera",
+        "headphones",
+        "smartwatch",
+        "electronic"
+      ],
       "sustainability_criteria": {
         "durability": {
           "weight": 0.25,
@@ -59,13 +70,39 @@
           ]
         }
       },
-      "certifications": ["Energy Star", "EPEAT", "TCO Certified", "Blue Angel", "EU Ecolabel", "RoHS", "WEEE"],
-      "references": ["ISO 14001", "ESPR", "WEEE Directive", "RoHS Directive"]
+      "certifications": [
+        "Energy Star",
+        "EPEAT",
+        "TCO Certified",
+        "Blue Angel",
+        "EU Ecolabel",
+        "RoHS",
+        "WEEE"
+      ],
+      "references": [
+        "ISO 14001",
+        "ESPR",
+        "WEEE Directive",
+        "RoHS Directive"
+      ]
     },
-
     "textiles_clothing": {
       "name": "Textiles, Clothing & Footwear",
-      "keywords": ["clothing", "shirt", "pants", "dress", "shoes", "sneakers", "boots", "jacket", "coat", "textile", "fabric", "apparel", "fashion"],
+      "keywords": [
+        "clothing",
+        "shirt",
+        "pants",
+        "dress",
+        "shoes",
+        "sneakers",
+        "boots",
+        "jacket",
+        "coat",
+        "textile",
+        "fabric",
+        "apparel",
+        "fashion"
+      ],
       "sustainability_criteria": {
         "materials": {
           "weight": 0.30,
@@ -116,13 +153,37 @@
           ]
         }
       },
-      "certifications": ["GOTS", "OEKO-TEX", "Fair Trade", "Bluesign", "Cradle to Cradle", "BCI", "FSC"],
-      "references": ["ESPR textile ban", "ISO 14001", "SA8000"]
+      "certifications": [
+        "GOTS",
+        "OEKO-TEX",
+        "Fair Trade",
+        "Bluesign",
+        "Cradle to Cradle",
+        "BCI",
+        "FSC"
+      ],
+      "references": [
+        "ESPR textile ban",
+        "ISO 14001",
+        "SA8000"
+      ]
     },
-
     "food_agriculture": {
       "name": "Food & Agricultural Products",
-      "keywords": ["food", "coffee", "tea", "chocolate", "fruit", "vegetable", "meat", "fish", "dairy", "grain", "organic", "agriculture"],
+      "keywords": [
+        "food",
+        "coffee",
+        "tea",
+        "chocolate",
+        "fruit",
+        "vegetable",
+        "meat",
+        "fish",
+        "dairy",
+        "grain",
+        "organic",
+        "agriculture"
+      ],
       "sustainability_criteria": {
         "production_methods": {
           "weight": 0.30,
@@ -173,13 +234,36 @@
           ]
         }
       },
-      "certifications": ["Organic", "Fairtrade", "Rainforest Alliance", "UTZ", "MSC", "ASC", "4C"],
-      "references": ["FAO Guidelines", "ISO 14001", "IFOAM"]
+      "certifications": [
+        "Organic",
+        "Fairtrade",
+        "Rainforest Alliance",
+        "UTZ",
+        "MSC",
+        "ASC",
+        "4C"
+      ],
+      "references": [
+        "FAO Guidelines",
+        "ISO 14001",
+        "IFOAM"
+      ]
     },
-
     "construction_materials": {
       "name": "Construction Materials & Building Products",
-      "keywords": ["cement", "concrete", "steel", "wood", "lumber", "insulation", "paint", "tiles", "roofing", "construction", "building"],
+      "keywords": [
+        "cement",
+        "concrete",
+        "steel",
+        "wood",
+        "lumber",
+        "insulation",
+        "paint",
+        "tiles",
+        "roofing",
+        "construction",
+        "building"
+      ],
       "sustainability_criteria": {
         "materials_sourcing": {
           "weight": 0.25,
@@ -229,13 +313,33 @@
           ]
         }
       },
-      "certifications": ["LEED", "BREEAM", "Cradle to Cradle", "FSC", "EPD", "Green Guard"],
-      "references": ["ISO 21930", "ISO 14001", "EU Green Building"]
+      "certifications": [
+        "LEED",
+        "BREEAM",
+        "Cradle to Cradle",
+        "FSC",
+        "EPD",
+        "Green Guard"
+      ],
+      "references": [
+        "ISO 21930",
+        "ISO 14001",
+        "EU Green Building"
+      ]
     },
-
     "furniture": {
       "name": "Furniture & Home Furnishings",
-      "keywords": ["furniture", "chair", "table", "desk", "sofa", "bed", "cabinet", "shelf", "mattress"],
+      "keywords": [
+        "furniture",
+        "chair",
+        "table",
+        "desk",
+        "sofa",
+        "bed",
+        "cabinet",
+        "shelf",
+        "mattress"
+      ],
       "sustainability_criteria": {
         "materials": {
           "weight": 0.30,
@@ -286,13 +390,32 @@
           ]
         }
       },
-      "certifications": ["FSC", "PEFC", "Green Guard", "Cradle to Cradle", "EU Ecolabel"],
-      "references": ["ESPR 2025-2030", "ISO 14001"]
+      "certifications": [
+        "FSC",
+        "PEFC",
+        "Green Guard",
+        "Cradle to Cradle",
+        "EU Ecolabel"
+      ],
+      "references": [
+        "ESPR 2025-2030",
+        "ISO 14001"
+      ]
     },
-
     "cosmetics_personal_care": {
       "name": "Cosmetics & Personal Care Products",
-      "keywords": ["cosmetics", "shampoo", "soap", "lotion", "cream", "makeup", "perfume", "deodorant", "toothpaste", "skincare"],
+      "keywords": [
+        "cosmetics",
+        "shampoo",
+        "soap",
+        "lotion",
+        "cream",
+        "makeup",
+        "perfume",
+        "deodorant",
+        "toothpaste",
+        "skincare"
+      ],
       "sustainability_criteria": {
         "ingredients": {
           "weight": 0.35,
@@ -342,13 +465,31 @@
           ]
         }
       },
-      "certifications": ["COSMOS", "Ecocert", "Leaping Bunny", "Vegan Society", "USDA Organic", "Natrue"],
-      "references": ["EU Cosmetics Regulation", "ISO 16128"]
+      "certifications": [
+        "COSMOS",
+        "Ecocert",
+        "Leaping Bunny",
+        "Vegan Society",
+        "USDA Organic",
+        "Natrue"
+      ],
+      "references": [
+        "EU Cosmetics Regulation",
+        "ISO 16128"
+      ]
     },
-
     "toys_games": {
       "name": "Toys & Games",
-      "keywords": ["toy", "game", "puzzle", "doll", "action figure", "board game", "educational toy", "children"],
+      "keywords": [
+        "toy",
+        "game",
+        "puzzle",
+        "doll",
+        "action figure",
+        "board game",
+        "educational toy",
+        "children"
+      ],
       "sustainability_criteria": {
         "materials": {
           "weight": 0.30,
@@ -398,13 +539,30 @@
           ]
         }
       },
-      "certifications": ["FSC", "GOTS", "Oeko-Tex", "CE Mark", "Fair Trade"],
-      "references": ["EN71", "ASTM F963", "ISO 8124"]
+      "certifications": [
+        "FSC",
+        "GOTS",
+        "Oeko-Tex",
+        "CE Mark",
+        "Fair Trade"
+      ],
+      "references": [
+        "EN71",
+        "ASTM F963",
+        "ISO 8124"
+      ]
     },
-
     "medical_equipment": {
       "name": "Medical Equipment & Healthcare Products",
-      "keywords": ["medical", "healthcare", "hospital", "diagnostic", "surgical", "medical device", "equipment"],
+      "keywords": [
+        "medical",
+        "healthcare",
+        "hospital",
+        "diagnostic",
+        "surgical",
+        "medical device",
+        "equipment"
+      ],
       "sustainability_criteria": {
         "safety_efficacy": {
           "weight": 0.35,
@@ -456,13 +614,31 @@
           ]
         }
       },
-      "certifications": ["CE Mark", "FDA Approval", "ISO 13485", "ISO 14001"],
-      "references": ["MDR", "IVDR", "ISO 13485", "ISO 14971"]
+      "certifications": [
+        "CE Mark",
+        "FDA Approval",
+        "ISO 13485",
+        "ISO 14001"
+      ],
+      "references": [
+        "MDR",
+        "IVDR",
+        "ISO 13485",
+        "ISO 14971"
+      ]
     },
-
     "office_supplies": {
       "name": "Office Supplies & Stationery",
-      "keywords": ["paper", "pen", "pencil", "notebook", "folder", "stapler", "office", "stationery"],
+      "keywords": [
+        "paper",
+        "pen",
+        "pencil",
+        "notebook",
+        "folder",
+        "stapler",
+        "office",
+        "stationery"
+      ],
       "sustainability_criteria": {
         "materials": {
           "weight": 0.35,
@@ -502,13 +678,28 @@
           ]
         }
       },
-      "certifications": ["FSC", "Blue Angel", "EU Ecolabel", "Nordic Swan"],
-      "references": ["ISO 14001", "EPA Guidelines"]
+      "certifications": [
+        "FSC",
+        "Blue Angel",
+        "EU Ecolabel",
+        "Nordic Swan"
+      ],
+      "references": [
+        "ISO 14001",
+        "EPA Guidelines"
+      ]
     },
-
     "cleaning_products": {
       "name": "Cleaning Products & Household Chemicals",
-      "keywords": ["detergent", "soap", "cleaner", "disinfectant", "bleach", "cleaning", "household"],
+      "keywords": [
+        "detergent",
+        "soap",
+        "cleaner",
+        "disinfectant",
+        "bleach",
+        "cleaning",
+        "household"
+      ],
       "sustainability_criteria": {
         "ingredients": {
           "weight": 0.35,
@@ -549,13 +740,29 @@
           ]
         }
       },
-      "certifications": ["EU Ecolabel", "Nordic Swan", "Ecocert", "Leaping Bunny", "EPA Safer Choice"],
-      "references": ["ISO 14001", "EU Detergents Regulation"]
+      "certifications": [
+        "EU Ecolabel",
+        "Nordic Swan",
+        "Ecocert",
+        "Leaping Bunny",
+        "EPA Safer Choice"
+      ],
+      "references": [
+        "ISO 14001",
+        "EU Detergents Regulation"
+      ]
     },
-
     "automotive": {
       "name": "Automotive & Transportation",
-      "keywords": ["car", "vehicle", "automobile", "truck", "motorcycle", "electric vehicle", "hybrid"],
+      "keywords": [
+        "car",
+        "vehicle",
+        "automobile",
+        "truck",
+        "motorcycle",
+        "electric vehicle",
+        "hybrid"
+      ],
       "sustainability_criteria": {
         "emissions": {
           "weight": 0.30,
@@ -607,13 +814,29 @@
           ]
         }
       },
-      "certifications": ["Euro NCAP", "ISO 14001", "ISO 14040"],
-      "references": ["EU CO2 Standards", "ESPR future"]
+      "certifications": [
+        "Euro NCAP",
+        "ISO 14001",
+        "ISO 14040"
+      ],
+      "references": [
+        "EU CO2 Standards",
+        "ESPR future"
+      ]
     },
-
     "digital_products_software": {
       "name": "Digital Products & Software",
-      "keywords": ["software", "app", "application", "digital service", "cloud", "SaaS", "platform", "AI", "machine learning"],
+      "keywords": [
+        "software",
+        "app",
+        "application",
+        "digital service",
+        "cloud",
+        "SaaS",
+        "platform",
+        "AI",
+        "machine learning"
+      ],
       "sustainability_criteria": {
         "energy_efficiency": {
           "weight": 0.40,
@@ -666,8 +889,15 @@
           ]
         }
       },
-      "certifications": ["Green Software Foundation", "ISO 14001", "Carbon Neutral Certification"],
-      "references": ["Green Software Principles", "EU Code of Conduct for Data Centres"],
+      "certifications": [
+        "Green Software Foundation",
+        "ISO 14001",
+        "Carbon Neutral Certification"
+      ],
+      "references": [
+        "Green Software Principles",
+        "EU Code of Conduct for Data Centres"
+      ],
       "special_notes": {
         "ai_ml_concerns": [
           "Large Language Models (LLMs) like GPT consume significant energy",
@@ -690,10 +920,17 @@
         ]
       }
     },
-
     "cloud_services": {
       "name": "Cloud Services & Data Centers",
-      "keywords": ["cloud", "hosting", "server", "data center", "storage", "computing", "infrastructure"],
+      "keywords": [
+        "cloud",
+        "hosting",
+        "server",
+        "data center",
+        "storage",
+        "computing",
+        "infrastructure"
+      ],
       "sustainability_criteria": {
         "energy_source": {
           "weight": 0.35,
@@ -744,13 +981,28 @@
           ]
         }
       },
-      "certifications": ["ISO 14001", "ISO 50001", "LEED", "EU Code of Conduct"],
-      "references": ["Green Grid", "EU Code of Conduct for Data Centres"]
+      "certifications": [
+        "ISO 14001",
+        "ISO 50001",
+        "LEED",
+        "EU Code of Conduct"
+      ],
+      "references": [
+        "Green Grid",
+        "EU Code of Conduct for Data Centres"
+      ]
     },
-
     "packaging": {
       "name": "Packaging Materials",
-      "keywords": ["packaging", "box", "container", "wrapper", "bag", "bottle", "can"],
+      "keywords": [
+        "packaging",
+        "box",
+        "container",
+        "wrapper",
+        "bag",
+        "bottle",
+        "can"
+      ],
       "sustainability_criteria": {
         "materials": {
           "weight": 0.35,
@@ -791,13 +1043,29 @@
           ]
         }
       },
-      "certifications": ["FSC", "Cradle to Cradle", "OK Compost", "EU Ecolabel"],
-      "references": ["EU Packaging Directive", "ISO 18601"]
+      "certifications": [
+        "FSC",
+        "Cradle to Cradle",
+        "OK Compost",
+        "EU Ecolabel"
+      ],
+      "references": [
+        "EU Packaging Directive",
+        "ISO 18601"
+      ]
     },
-
     "energy_utilities": {
       "name": "Energy & Utilities",
-      "keywords": ["electricity", "gas", "energy", "utility", "power", "renewable energy", "solar", "wind"],
+      "keywords": [
+        "electricity",
+        "gas",
+        "energy",
+        "utility",
+        "power",
+        "renewable energy",
+        "solar",
+        "wind"
+      ],
       "sustainability_criteria": {
         "energy_source": {
           "weight": 0.45,
@@ -838,13 +1106,27 @@
           ]
         }
       },
-      "certifications": ["Green-e", "EKOenergy", "ISO 50001"],
-      "references": ["EU Renewable Energy Directive", "ISO 50001"]
+      "certifications": [
+        "Green-e",
+        "EKOenergy",
+        "ISO 50001"
+      ],
+      "references": [
+        "EU Renewable Energy Directive",
+        "ISO 50001"
+      ]
     },
-
     "financial_services": {
       "name": "Financial Services & Banking",
-      "keywords": ["bank", "insurance", "investment", "loan", "credit", "financial", "fund"],
+      "keywords": [
+        "bank",
+        "insurance",
+        "investment",
+        "loan",
+        "credit",
+        "financial",
+        "fund"
+      ],
       "sustainability_criteria": {
         "investment_policy": {
           "weight": 0.35,
@@ -885,13 +1167,28 @@
           ]
         }
       },
-      "certifications": ["B Corp", "ISO 14001", "TCFD"],
-      "references": ["EU Taxonomy", "TCFD", "SFDR"]
+      "certifications": [
+        "B Corp",
+        "ISO 14001",
+        "TCFD"
+      ],
+      "references": [
+        "EU Taxonomy",
+        "TCFD",
+        "SFDR"
+      ]
     },
-
     "travel_tourism": {
       "name": "Travel & Tourism",
-      "keywords": ["hotel", "travel", "tourism", "accommodation", "resort", "airline", "cruise"],
+      "keywords": [
+        "hotel",
+        "travel",
+        "tourism",
+        "accommodation",
+        "resort",
+        "airline",
+        "cruise"
+      ],
       "sustainability_criteria": {
         "environmental_management": {
           "weight": 0.30,
@@ -940,11 +1237,77 @@
           ]
         }
       },
-      "certifications": ["Green Key", "EarthCheck", "Travelife", "Green Globe", "ISO 21401"],
-      "references": ["ISO 21401", "GSTC Criteria"]
+      "certifications": [
+        "Green Key",
+        "EarthCheck",
+        "Travelife",
+        "Green Globe",
+        "ISO 21401"
+      ],
+      "references": [
+        "ISO 21401",
+        "GSTC Criteria"
+      ]
     }
   },
-
+  "general": {
+    "name": "General Products",
+    "keywords": [
+      "product",
+      "item",
+      "goods",
+      "thing",
+      "object"
+    ],
+    "sustainability_criteria": {
+      "durability": {
+        "weight": 0.30,
+        "guidelines": [
+          "Long product lifespan",
+          "Quality construction",
+          "Repairable design",
+          "Resistant to wear and tear"
+        ]
+      },
+      "materials": {
+        "weight": 0.30,
+        "guidelines": [
+          "Sustainable or recycled materials",
+          "Non-toxic materials",
+          "Minimal environmental impact",
+          "Responsibly sourced"
+        ]
+      },
+      "production": {
+        "weight": 0.20,
+        "guidelines": [
+          "Ethical production practices",
+          "Low environmental impact manufacturing",
+          "Fair labor practices",
+          "Energy-efficient production"
+        ]
+      },
+      "end_of_life": {
+        "weight": 0.20,
+        "guidelines": [
+          "Recyclable or biodegradable",
+          "Take-back programs",
+          "Minimal waste generation",
+          "Circular economy compatible"
+        ]
+      }
+    },
+    "certifications": [
+      "ISO 14001",
+      "Fair Trade",
+      "B Corp",
+      "Cradle to Cradle"
+    ],
+    "references": [
+      "ISO 14001",
+      "ISO 26000"
+    ]
+  },
   "general_sustainability_principles": {
     "circular_economy": [
       "Design for longevity and durability",
@@ -997,7 +1360,6 @@
       "Water-stressed region awareness"
     ]
   },
-
   "evaluation_methodology": {
     "description": "How to use these guidelines for product evaluation",
     "steps": [
@@ -1019,7 +1381,6 @@
     },
     "llm_prompt_template": "Analyze this product: {product_name}. Category: {category}. Context: {context}. Evaluate against these sustainability criteria: {criteria}. Check for certifications: {certifications}. Provide: 1) Sustainability score (0-100), 2) Strengths, 3) Weaknesses, 4) Three sustainable alternatives with justification."
   },
-
   "metadata": {
     "total_categories": 18,
     "coverage": "Comprehensive - physical products, digital products, services",
