@@ -155,29 +155,51 @@ export default async function handler(
     let realProducts: Array<{title: string, url: string, snippet: string}> = [];
     
     try {
-      // Construir query de busca baseada na categoria e certificações
-      const certifications = categoryData.certifications.join(' OR ');
-      const searchQuery = `sustainable ${categoryData.name} alternatives ${certifications} buy`;
+      // Construir query mais específica e focada em produtos para compra
+      const productKeywords = categoryData.keywords.slice(0, 3).join(' OR ');
+      const certifications = categoryData.certifications.slice(0, 2).join(' OR ');
+      
+      // Query melhorada: produto + sustentável + onde comprar
+      const searchQuery = `buy sustainable eco-friendly ${productKeywords} ${certifications} online shop ecommerce`;
       
       console.log('🔎 Tavily search query:', searchQuery);
       
       // Busca ABERTA - sem restrição de domínios
       // Tavily vai buscar em QUALQUER e-commerce/site que venda produtos sustentáveis
       const tavilyResults = await webSearchClient.search(searchQuery, {
-        maxResults: 10,
+        maxResults: 15, // Aumentar para ter mais opções de filtrar
         searchDepth: 'advanced',
         includeAnswer: false
         // SEM includeDomains - busca aberta em toda a web
       });
       
       if (tavilyResults.success && tavilyResults.results) {
-        realProducts = tavilyResults.results.map(r => ({
+        // Filtrar apenas resultados que parecem ser de e-commerce/produtos
+        const filteredResults = tavilyResults.results.filter(r => {
+          const text = `${r.title} ${r.snippet} ${r.url}`.toLowerCase();
+          
+          // Palavras que indicam que é um produto à venda
+          const productIndicators = ['buy', 'price', 'shop', 'store', 'cart', 'comprar', 'loja', 'preço'];
+          const hasProductIndicator = productIndicators.some(word => text.includes(word));
+          
+          // Palavras que indicam que NÃO é um produto (artigos, guias, etc)
+          const excludeWords = ['wikipedia', 'article', 'guide', 'blog', 'news', 'notícia', 'artigo'];
+          const hasExcludeWord = excludeWords.some(word => text.includes(word));
+          
+          // Verificar se o domínio parece ser e-commerce
+          const ecommercePatterns = ['.com', '.br', '.shop', 'store', 'loja', 'market'];
+          const looksLikeEcommerce = ecommercePatterns.some(pattern => r.url.includes(pattern));
+          
+          return hasProductIndicator && !hasExcludeWord && looksLikeEcommerce;
+        });
+        
+        realProducts = filteredResults.slice(0, 10).map(r => ({
           title: r.title,
           url: r.url,
           snippet: r.snippet
         }));
         
-        console.log('✅ Tavily found', realProducts.length, 'real products');
+        console.log('✅ Tavily found', tavilyResults.results.length, 'results, filtered to', realProducts.length, 'product pages');
         console.log('📋 Real products:', realProducts.map(p => p.title));
       } else {
         console.warn('⚠️ Tavily search failed, will use AI suggestions only');
@@ -214,29 +236,54 @@ export default async function handler(
 // ===== IDENTIFICAR CATEGORIA =====
 function identifyCategory(productInfo: ProductInfo): string {
   const productName = productInfo.productName || productInfo.product_name || '';
-  const text = `
-    ${productName} 
-    ${productInfo.description || ''} 
-    ${productInfo.selectedText || ''}
-  `.toLowerCase();
+  const description = productInfo.description || '';
+  const selectedText = productInfo.selectedText || '';
+  
+  const text = `${productName} ${description} ${selectedText}`.toLowerCase();
 
   const typedAlternatives = alternativesData as AlternativesData;
-  let bestMatch = { category: 'electronics', score: 0 };
+  let bestMatch = { category: '', score: 0 };
 
-  // Iterar sobre todas as categorias
+  // Iterar sobre todas as categorias e calcular score
   for (const [categoryKey, categoryData] of Object.entries(typedAlternatives.categories)) {
     const keywords = categoryData.keywords || [];
     let score = 0;
 
     for (const keyword of keywords) {
-      if (text.includes(keyword.toLowerCase())) {
-        score++;
+      const keywordLower = keyword.toLowerCase();
+      
+      // Contar quantas vezes a keyword aparece (palavras podem aparecer múltiplas vezes)
+      const matches = text.match(new RegExp(keywordLower, 'g'));
+      if (matches) {
+        score += matches.length;
+      }
+      
+      // Bonus se a keyword aparece no nome do produto (mais relevante)
+      if (productName.toLowerCase().includes(keywordLower)) {
+        score += 2;
       }
     }
 
     if (score > bestMatch.score) {
       bestMatch = { category: categoryKey, score };
     }
+  }
+
+  // Se não encontrou match bom, tentar fallback inteligente
+  if (bestMatch.score === 0) {
+    console.warn('⚠️ No category match found, trying fallback...');
+    
+    // Fallbacks comuns
+    if (text.includes('talher') || text.includes('garfo') || text.includes('colher') || text.includes('prato') || text.includes('copo')) {
+      bestMatch = { category: 'packaging', score: 1 }; // Usar packaging como proxy para descartáveis
+    } else if (text.includes('plástico') || text.includes('descartável')) {
+      bestMatch = { category: 'packaging', score: 1 };
+    } else {
+      // Default genérico
+      bestMatch = { category: 'packaging', score: 0 };
+    }
+    
+    console.log('📦 Fallback category selected:', bestMatch.category);
   }
 
   console.log('🔍 Category match:', bestMatch);
@@ -308,18 +355,27 @@ TAREFA:
 
 IMPORTANTE SOBRE AS ALTERNATIVAS:
 ${realProducts.length > 0 ? `
-- PRIORIZE os produtos reais listados acima
-- Use os títulos e URLs EXATOS dos produtos encontrados
-- Para cada alternativa, inclua o "product_url" com o link real do produto
-- Se não houver produtos reais suficientes, complete com sugestões genéricas mas realistas
+- Você recebeu ${realProducts.length} produtos REAIS encontrados na web
+- ANALISE cada produto e USE APENAS os que são RELEVANTES para "${productName}"
+- IGNORE completamente produtos que não são da mesma categoria (ex: se pediu talheres, ignore carros, eletrônicos, etc)
+- Para cada alternativa que você escolher:
+  * Use o título EXATO do produto encontrado
+  * Use a URL EXATA fornecida
+  * O produto DEVE ser da mesma categoria que "${category}"
+  * Verifique se faz sentido como alternativa sustentável
+- Se NENHUM dos produtos encontrados for relevante, sugira produtos genéricos mas realistas
+- NUNCA sugira produtos de categorias diferentes (ex: carros quando pediu utensílios)
 ` : `
-- Sugira produtos reais que existem no mercado brasileiro
-- Seja específico sobre onde comprar (Amazon, Mercado Livre, etc)
-- Use marcas e produtos que realmente existem
+- Não foram encontrados produtos reais na busca
+- Sugira produtos GENÉRICOS mas REALISTAS que existem no mercado
+- Use nomes de produtos que realmente existem
+- Seja específico sobre onde comprar (ex: "Amazon Brasil", "Mercado Livre")
+- Os produtos devem ser da categoria "${category}"
 `}
 - Seja específico e prático nas recomendações
 - Os scores das alternativas devem ser baseados nos critérios de sustentabilidade
 - Alternativas devem ter score MAIOR que o produto original
+- VALIDE que cada alternativa faz sentido para substituir "${productName}"
 
 Retorne APENAS um JSON válido no seguinte formato:
 {
