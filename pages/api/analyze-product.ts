@@ -2,6 +2,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import Groq from 'groq-sdk';
 import alternativesData from '../../data/alternatives.json';
+import webSearchClient from '../../services/web-search-client';
 
 // ===== TIPOS =====
 interface ProductInfo {
@@ -65,6 +66,7 @@ interface Alternative {
   sustainability_score: number;
   where_to_buy: string;
   certifications: string[];
+  product_url?: string; // URL real do produto encontrado
 }
 
 interface GroqAnalysisResult {
@@ -145,8 +147,53 @@ export default async function handler(
       });
     }
 
-    // Chamar Groq para análise
-    const analysis = await analyzeWithGroq(productInfo, category, categoryData);
+    // ============================================================================
+    // NOVO: Buscar produtos reais com Tavily ANTES de chamar a IA
+    // ============================================================================
+    console.log('🔍 Searching for real sustainable alternatives with Tavily...');
+    
+    let realProducts: Array<{title: string, url: string, snippet: string}> = [];
+    
+    try {
+      // Construir query de busca baseada na categoria e certificações
+      const certifications = categoryData.certifications.join(' OR ');
+      const searchQuery = `sustainable ${categoryData.name} alternatives ${certifications} buy`;
+      
+      console.log('🔎 Tavily search query:', searchQuery);
+      
+      // Busca ABERTA - sem restrição de domínios
+      // Tavily vai buscar em QUALQUER e-commerce/site que venda produtos sustentáveis
+      const tavilyResults = await webSearchClient.search(searchQuery, {
+        maxResults: 10,
+        searchDepth: 'advanced',
+        includeAnswer: false
+        // SEM includeDomains - busca aberta em toda a web
+      });
+      
+      if (tavilyResults.success && tavilyResults.results) {
+        realProducts = tavilyResults.results.map(r => ({
+          title: r.title,
+          url: r.url,
+          snippet: r.snippet
+        }));
+        
+        console.log('✅ Tavily found', realProducts.length, 'real products');
+        console.log('📋 Real products:', realProducts.map(p => p.title));
+      } else {
+        console.warn('⚠️ Tavily search failed, will use AI suggestions only');
+      }
+    } catch (tavilyError) {
+      console.error('❌ Tavily error:', tavilyError);
+      console.warn('⚠️ Continuing without Tavily results');
+    }
+
+    // Chamar Groq para análise COM os produtos reais encontrados
+    const analysis = await analyzeWithGroq(
+      productInfo, 
+      category, 
+      categoryData,
+      realProducts // PASSAR produtos reais para a IA
+    );
 
     return res.status(200).json({
       success: true,
@@ -196,11 +243,12 @@ function identifyCategory(productInfo: ProductInfo): string {
   return bestMatch.category;
 }
 
-// ===== ANÁLISE COM GROQ =====
+// ===== ANÁLISE COM GROQ (MODIFICADO PARA USAR PRODUTOS REAIS) =====
 async function analyzeWithGroq(
   productInfo: ProductInfo, 
   category: string, 
-  categoryData: CategoryData
+  categoryData: CategoryData,
+  realProducts: Array<{title: string, url: string, snippet: string}> = []
 ): Promise<GroqAnalysisResult> {
   const groqApiKey = process.env.GROQ_API_KEY;
   
@@ -222,7 +270,18 @@ async function analyzeWithGroq(
 
   const certificationsText = categoryData.certifications.join(', ');
 
-  // Prompt otimizado para Groq
+  // ============================================================================
+  // NOVO: Preparar lista de produtos reais encontrados
+  // ============================================================================
+  const realProductsText = realProducts.length > 0
+    ? `\n\nPRODUTOS SUSTENTÁVEIS REAIS ENCONTRADOS (use estes como base para suas sugestões):\n${
+        realProducts.map((p, i) => 
+          `${i + 1}. ${p.title}\n   URL: ${p.url}\n   Descrição: ${p.snippet}\n`
+        ).join('\n')
+      }`
+    : '';
+
+  // Prompt otimizado para Groq COM produtos reais
   const prompt = `
 Você é um especialista em sustentabilidade e análise de produtos.
 
@@ -237,6 +296,7 @@ ${criteriaText}
 
 CERTIFICAÇÕES RELEVANTES:
 ${certificationsText}
+${realProductsText}
 
 TAREFA:
 1. Analise o produto considerando os critérios acima
@@ -244,13 +304,22 @@ TAREFA:
 3. Identifique pontos fortes e fracos
 4. Liste impactos ambientais
 5. Forneça recomendações práticas
-6. Sugira 3 alternativas mais sustentáveis (produtos reais que existem no mercado)
+6. Sugira 3 alternativas mais sustentáveis
 
-IMPORTANTE: 
-- Use seu conhecimento para avaliar o produto de forma realista
-- Se possível, mencione certificações que o produto possui
-- Para as alternativas, sugira produtos reais e disponíveis no mercado
+IMPORTANTE SOBRE AS ALTERNATIVAS:
+${realProducts.length > 0 ? `
+- PRIORIZE os produtos reais listados acima
+- Use os títulos e URLs EXATOS dos produtos encontrados
+- Para cada alternativa, inclua o "product_url" com o link real do produto
+- Se não houver produtos reais suficientes, complete com sugestões genéricas mas realistas
+` : `
+- Sugira produtos reais que existem no mercado brasileiro
+- Seja específico sobre onde comprar (Amazon, Mercado Livre, etc)
+- Use marcas e produtos que realmente existem
+`}
 - Seja específico e prático nas recomendações
+- Os scores das alternativas devem ser baseados nos critérios de sustentabilidade
+- Alternativas devem ter score MAIOR que o produto original
 
 Retorne APENAS um JSON válido no seguinte formato:
 {
@@ -272,12 +341,13 @@ Retorne APENAS um JSON válido no seguinte formato:
   },
   "alternatives": [
     {
-      "name": "nome da alternativa 1",
+      "name": "nome EXATO do produto real",
       "description": "descrição do produto alternativo",
       "benefits": "benefícios ambientais específicos",
       "sustainability_score": 85,
-      "where_to_buy": "sugestão de onde comprar (loja, site)",
-      "certifications": ["certificação 1", "certificação 2"]
+      "where_to_buy": "loja específica (ex: Amazon Brasil, Mercado Livre)",
+      "certifications": ["certificação 1", "certificação 2"],
+      "product_url": "URL real do produto (se disponível)"
     },
     {
       "name": "nome da alternativa 2",
@@ -285,7 +355,8 @@ Retorne APENAS um JSON válido no seguinte formato:
       "benefits": "benefícios",
       "sustainability_score": 80,
       "where_to_buy": "onde comprar",
-      "certifications": ["certificações"]
+      "certifications": ["certificações"],
+      "product_url": "URL se disponível"
     },
     {
       "name": "nome da alternativa 3",
@@ -293,20 +364,21 @@ Retorne APENAS um JSON válido no seguinte formato:
       "benefits": "benefícios",
       "sustainability_score": 78,
       "where_to_buy": "onde comprar",
-      "certifications": ["certificações"]
+      "certifications": ["certificações"],
+      "product_url": "URL se disponível"
     }
   ]
 }
 `;
 
   try {
-    console.log('🤖 Calling Groq API...');
+    console.log('🤖 Calling Groq API with real products context...');
     
     const completion = await groq.chat.completions.create({
       messages: [
         {
           role: 'system',
-          content: 'Você é um especialista em sustentabilidade. Sempre retorne respostas em JSON válido.'
+          content: 'Você é um especialista em sustentabilidade. Sempre retorne respostas em JSON válido. Quando produtos reais são fornecidos, use-os como base para suas recomendações.'
         },
         {
           role: 'user',
@@ -314,7 +386,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         }
       ],
       model: 'llama-3.3-70b-versatile',
-      temperature: 0.7,
+      temperature: 0.5, // Reduzido para ser mais preciso com produtos reais
       max_tokens: 3000,
       response_format: { type: 'json_object' }
     });
@@ -329,6 +401,13 @@ Retorne APENAS um JSON válido no seguinte formato:
 
     // Parse JSON
     const result = JSON.parse(content) as GroqAnalysisResult;
+    
+    // Log das alternativas sugeridas
+    console.log('🌿 Alternatives suggested:', result.alternatives.map(a => ({
+      name: a.name,
+      score: a.sustainability_score,
+      url: a.product_url || 'N/A'
+    })));
     
     return result;
 
