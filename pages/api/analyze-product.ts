@@ -155,11 +155,12 @@ export default async function handler(
     let realProducts: Array<{title: string, url: string, snippet: string}> = [];
     
     try {
-      // Usar o nome do produto para buscar alternativas sustentáveis relevantes
+      // Traduzir o nome do produto para inglês para melhor busca
+      const translatedProductName = await translateProductName(finalProductName);
       const certifications = categoryData.certifications.slice(0, 2).join(' OR ');
       
-      // Query melhorada: NOME DO PRODUTO + sustentável + onde comprar
-      const searchQuery = `buy sustainable eco-friendly ${finalProductName} alternatives ${certifications} online shop`;
+      // Query melhorada: NOME TRADUZIDO + sustentável + onde comprar
+      const searchQuery = `buy sustainable eco-friendly ${translatedProductName} alternatives ${certifications} online shop`;
       
       console.log('🔎 Tavily search query:', searchQuery);
       
