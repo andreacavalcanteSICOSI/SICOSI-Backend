@@ -132,8 +132,8 @@ export default async function handler(
 
     console.log('📦 Analyzing product:', finalProductName);
 
-    // Identificar categoria baseada nas keywords
-    const category = identifyCategory(productInfo);
+    // Identificar categoria baseada nas keywords (agora com tradução automática)
+    const category = await identifyCategory(productInfo);
     console.log('📂 Category identified:', category);
 
     // Obter dados da categoria
@@ -232,13 +232,64 @@ export default async function handler(
   }
 }
 
+// ===== TRADUZIR PRODUTO PARA INGLÊS (SE NECESSÁRIO) =====
+async function translateProductName(productName: string): Promise<string> {
+  // Se já está em inglês (maioria das palavras), retorna direto
+  const englishPattern = /^[a-zA-Z0-9\s\-_]+$/;
+  if (englishPattern.test(productName)) {
+    console.log('📝 Product name already in English:', productName);
+    return productName;
+  }
+
+  const groqApiKey = process.env.GROQ_API_KEY;
+  
+  if (!groqApiKey) {
+    console.warn('⚠️ GROQ_API_KEY not available for translation, using original name');
+    return productName;
+  }
+
+  try {
+    const groq = new Groq({ apiKey: groqApiKey });
+
+    console.log('🌐 Translating product name to English:', productName);
+
+    const completion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a translator. Translate product names to English. Return ONLY the translated name, nothing else.'
+        },
+        {
+          role: 'user',
+          content: `Translate this product name to English: "${productName}"`
+        }
+      ],
+      model: 'llama-3.3-70b-versatile',
+      temperature: 0.3,
+      max_tokens: 50
+    });
+
+    const translated = completion.choices[0]?.message?.content?.trim() || productName;
+    console.log('✅ Translated to:', translated);
+    
+    return translated;
+
+  } catch (error) {
+    console.error('❌ Translation error:', error);
+    return productName; // Fallback to original
+  }
+}
+
 // ===== IDENTIFICAR CATEGORIA =====
-function identifyCategory(productInfo: ProductInfo): string {
+async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   const productName = productInfo.productName || productInfo.product_name || '';
   const description = productInfo.description || '';
   const selectedText = productInfo.selectedText || '';
   
-  const text = `${productName} ${description} ${selectedText}`.toLowerCase();
+  // Traduzir nome do produto para inglês (se necessário)
+  const translatedName = await translateProductName(productName);
+  
+  const text = `${translatedName} ${description} ${selectedText}`.toLowerCase();
 
   const typedAlternatives = alternativesData as AlternativesData;
   let bestMatch = { category: '', score: 0 };
@@ -257,8 +308,8 @@ function identifyCategory(productInfo: ProductInfo): string {
         score += matches.length;
       }
       
-      // Bonus se a keyword aparece no nome do produto (mais relevante)
-      if (productName.toLowerCase().includes(keywordLower)) {
+      // Bonus se a keyword aparece no nome do produto traduzido (mais relevante)
+      if (translatedName.toLowerCase().includes(keywordLower)) {
         score += 2;
       }
     }
@@ -273,13 +324,14 @@ function identifyCategory(productInfo: ProductInfo): string {
     console.warn('⚠️ No category match found, trying fallback...');
     
     // Fallbacks comuns
-    if (text.includes('talher') || text.includes('garfo') || text.includes('colher') || text.includes('prato') || text.includes('copo')) {
-      bestMatch = { category: 'packaging', score: 1 }; // Usar packaging como proxy para descartáveis
-    } else if (text.includes('plástico') || text.includes('descartável')) {
-      bestMatch = { category: 'packaging', score: 1 };
+    if (text.includes('talher') || text.includes('garfo') || text.includes('colher') || text.includes('prato') || text.includes('copo') || 
+        text.includes('cutlery') || text.includes('fork') || text.includes('spoon') || text.includes('plate') || text.includes('cup')) {
+      bestMatch = { category: 'reusable_zero_waste', score: 1 };
+    } else if (text.includes('plástico') || text.includes('descartável') || text.includes('plastic') || text.includes('disposable')) {
+      bestMatch = { category: 'reusable_zero_waste', score: 1 };
     } else {
       // Default genérico
-      bestMatch = { category: 'packaging', score: 0 };
+      bestMatch = { category: 'general', score: 0 };
     }
     
     console.log('📦 Fallback category selected:', bestMatch.category);
