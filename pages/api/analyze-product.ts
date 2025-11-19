@@ -14,6 +14,7 @@ interface ProductInfo {
   selectedText?: string;
   price?: string;
   images?: string[];
+  userCountry?: string; // ISO country code (e.g., "BR", "US", "UK")
 }
 
 interface AnalysisRequest {
@@ -22,6 +23,7 @@ interface AnalysisRequest {
   productName?: string;
   product_url?: string;
   pageUrl?: string;
+  userCountry?: string; // ISO country code
 }
 
 interface SustainabilityCriterion {
@@ -159,10 +161,31 @@ export default async function handler(
       const translatedProductName = await translateProductName(finalProductName);
       const certifications = categoryData.certifications.slice(0, 2).join(' OR ');
       
-      // Query melhorada: NOME TRADUZIDO + sustentável + onde comprar
-      const searchQuery = `buy sustainable eco-friendly ${translatedProductName} alternatives ${certifications} online shop`;
+      // Detectar país do usuário (priorizar Brasil)
+      const userCountry = productInfo.userCountry || req.body.userCountry || 'BR';
+      const countryNames: Record<string, string> = {
+        'BR': 'Brazil',
+        'US': 'United States',
+        'UK': 'United Kingdom',
+        'CA': 'Canada',
+        'AU': 'Australia',
+        'DE': 'Germany',
+        'FR': 'France',
+        'ES': 'Spain',
+        'IT': 'Italy',
+        'PT': 'Portugal',
+        'MX': 'Mexico',
+        'AR': 'Argentina',
+        'CL': 'Chile',
+        'CO': 'Colombia'
+      };
+      const countryName = countryNames[userCountry] || 'Brazil';
+      
+      // Query melhorada: NOME TRADUZIDO + PAÍS + sustentável + onde comprar
+      const searchQuery = `buy sustainable eco-friendly ${translatedProductName} alternatives ${countryName} ${certifications} online shop`;
       
       console.log('🔎 Tavily search query:', searchQuery);
+      console.log('🌍 User country:', userCountry, `(${countryName})`);
       
       // Busca ABERTA - sem restrição de domínios
       // Tavily vai buscar em QUALQUER e-commerce/site que venda produtos sustentáveis
