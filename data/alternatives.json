@@ -1813,7 +1813,23 @@
         "reutilizavel",
         "lixo zero",
         "canudo",
-        "garrafa"
+        "garrafa",
+        "talher",
+        "talheres",
+        "garfo",
+        "colher",
+        "faca",
+        "cutlery",
+        "fork",
+        "spoon",
+        "knife",
+        "silverware",
+        "descartavel",
+        "disposable",
+        "prato",
+        "copo",
+        "plate",
+        "cup"
       ],
       "sustainability_criteria": {
         "reusability": {
