@@ -155,12 +155,11 @@ export default async function handler(
     let realProducts: Array<{title: string, url: string, snippet: string}> = [];
     
     try {
-      // Construir query mais específica e focada em produtos para compra
-      const productKeywords = categoryData.keywords.slice(0, 3).join(' OR ');
+      // Usar o nome do produto para buscar alternativas sustentáveis relevantes
       const certifications = categoryData.certifications.slice(0, 2).join(' OR ');
       
-      // Query melhorada: produto + sustentável + onde comprar
-      const searchQuery = `buy sustainable eco-friendly ${productKeywords} ${certifications} online shop ecommerce`;
+      // Query melhorada: NOME DO PRODUTO + sustentável + onde comprar
+      const searchQuery = `buy sustainable eco-friendly ${finalProductName} alternatives ${certifications} online shop`;
       
       console.log('🔎 Tavily search query:', searchQuery);
       
