@@ -111,10 +111,7 @@
         "textile",
         "fabric",
         "apparel",
-        "fashion",
-        "roupa",
-        "calça",
-        "camisa"
+        "fashion"
       ],
       "sustainability_criteria": {
         "materials": {
@@ -211,9 +208,7 @@
         "castanha",
         "cupuacu",
         "pirarucu",
-        "tambaqui",
-        "cafe",
-        "cacau"
+        "tambaqui"
       ],
       "sustainability_criteria": {
         "production_methods": {
@@ -321,9 +316,7 @@
         "tiles",
         "roofing",
         "construction",
-        "building",
-        "madeira",
-        "cimento"
+        "building"
       ],
       "sustainability_criteria": {
         "materials_sourcing": {
@@ -409,10 +402,7 @@
         "bed",
         "cabinet",
         "shelf",
-        "mattress",
-        "movel",
-        "cadeira",
-        "mesa"
+        "mattress"
       ],
       "sustainability_criteria": {
         "materials": {
@@ -494,10 +484,7 @@
         "perfume",
         "deodorant",
         "toothpaste",
-        "skincare",
-        "sabonete",
-        "creme",
-        "maquiagem"
+        "skincare"
       ],
       "sustainability_criteria": {
         "ingredients": {
@@ -583,9 +570,7 @@
         "action figure",
         "board game",
         "educational toy",
-        "children",
-        "brinquedo",
-        "jogo"
+        "children"
       ],
       "sustainability_criteria": {
         "materials": {
@@ -664,9 +649,7 @@
         "diagnostic",
         "surgical",
         "medical device",
-        "equipment",
-        "saude",
-        "hospitalar"
+        "equipment"
       ],
       "sustainability_criteria": {
         "safety_efficacy": {
@@ -744,10 +727,7 @@
         "folder",
         "stapler",
         "office",
-        "stationery",
-        "papel",
-        "caneta",
-        "caderno"
+        "stationery"
       ],
       "sustainability_criteria": {
         "materials": {
@@ -813,10 +793,7 @@
         "disinfectant",
         "bleach",
         "cleaning",
-        "household",
-        "detergente",
-        "sabao",
-        "limpeza"
+        "household"
       ],
       "sustainability_criteria": {
         "ingredients": {
@@ -886,10 +863,7 @@
         "truck",
         "motorcycle",
         "electric vehicle",
-        "hybrid",
-        "carro",
-        "veiculo",
-        "moto"
+        "hybrid"
       ],
       "sustainability_criteria": {
         "emissions": {
@@ -973,9 +947,7 @@
         "SaaS",
         "platform",
         "AI",
-        "machine learning",
-        "aplicativo",
-        "sistema"
+        "machine learning"
       ],
       "sustainability_criteria": {
         "energy_efficiency": {
@@ -1069,9 +1041,7 @@
         "data center",
         "storage",
         "computing",
-        "infrastructure",
-        "nuvem",
-        "servidor"
+        "infrastructure"
       ],
       "sustainability_criteria": {
         "energy_source": {
@@ -1143,10 +1113,7 @@
         "wrapper",
         "bag",
         "bottle",
-        "can",
-        "embalagem",
-        "caixa",
-        "saco"
+        "can"
       ],
       "sustainability_criteria": {
         "materials": {
@@ -1212,9 +1179,7 @@
         "power",
         "renewable energy",
         "solar",
-        "wind",
-        "energia",
-        "eletricidade"
+        "wind"
       ],
       "sustainability_criteria": {
         "energy_source": {
@@ -1284,10 +1249,7 @@
         "loan",
         "credit",
         "financial",
-        "fund",
-        "banco",
-        "investimento",
-        "seguro"
+        "fund"
       ],
       "sustainability_criteria": {
         "investment_policy": {
@@ -1356,10 +1318,7 @@
         "accommodation",
         "resort",
         "airline",
-        "cruise",
-        "viagem",
-        "turismo",
-        "hospedagem"
+        "cruise"
       ],
       "sustainability_criteria": {
         "environmental_management": {
@@ -1440,11 +1399,7 @@
         "pet toy",
         "pet bed",
         "collar",
-        "leash",
-        "racao",
-        "cachorro",
-        "gato",
-        "animal de estimacao"
+        "leash"
       ],
       "sustainability_criteria": {
         "ingredients_materials": {
@@ -1532,11 +1487,7 @@
         "shower",
         "faucet",
         "rainwater",
-        "water saving",
-        "agua",
-        "filtro",
-        "chuveiro",
-        "torneira"
+        "water saving"
       ],
       "sustainability_criteria": {
         "water_efficiency": {
@@ -1620,12 +1571,7 @@
         "menstrual",
         "period",
         "baby",
-        "diaper",
-        "absorvente",
-        "fralda",
-        "bebe",
-        "menstruacao",
-        "calcinha absorvente"
+        "diaper"
       ],
       "sustainability_criteria": {
         "materials": {
@@ -1713,11 +1659,7 @@
         "seeds",
         "plants",
         "urban farming",
-        "gardening",
-        "jardim",
-        "composteira",
-        "sementes",
-        "horta"
+        "gardening"
       ],
       "sustainability_criteria": {
         "organic_practices": {
@@ -1810,24 +1752,12 @@
         "bottle",
         "container",
         "wrap",
-        "reutilizavel",
-        "lixo zero",
-        "canudo",
-        "garrafa",
-        "talher",
-        "talheres",
-        "garfo",
-        "colher",
-        "faca",
         "cutlery",
         "fork",
         "spoon",
         "knife",
         "silverware",
-        "descartavel",
         "disposable",
-        "prato",
-        "copo",
         "plate",
         "cup"
       ],
@@ -1918,11 +1848,7 @@
         "repair",
         "refurbish",
         "second-hand",
-        "circular",
-        "aluguel",
-        "conserto",
-        "compartilhamento",
-        "economia circular"
+        "circular"
       ],
       "sustainability_criteria": {
         "resource_efficiency": {
@@ -2010,10 +1936,7 @@
         "item",
         "goods",
         "thing",
-        "object",
-        "produto",
-        "item",
-        "coisa"
+        "object"
       ],
       "sustainability_criteria": {
         "durability": {
