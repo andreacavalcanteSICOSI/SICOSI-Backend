@@ -257,7 +257,7 @@ export default async function handler(
               const isValid = hasProductURL && !isExcluded && hasSustainableKeyword && isEcommerce;
               
               if (isValid) {
-                console.log('✅ Valid product:', r.title.substring(0, 60));
+                console.log('✅ Valid product:', r.title?.substring(0, 60) || 'No title');
               }
               
               return isValid;
@@ -421,7 +421,7 @@ async function analyzeWithGroq(
   const realProductsText = realProducts.length > 0
     ? `\n\nPRODUTOS SUSTENTÁVEIS REAIS ENCONTRADOS:\n${
         realProducts.map((p, i) => 
-          `${i + 1}. ${p.title}\n   URL: ${p.url}\n   Info: ${p.snippet.substring(0, 100)}\n`
+          `${i + 1}. ${p.title || 'No title'}\n   URL: ${p.url}\n   Info: ${(p.snippet || '').substring(0, 100)}\n`
         ).join('\n')
       }`
     : '';
