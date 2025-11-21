@@ -1,4 +1,8 @@
 // pages/api/analyze-product.ts
+// ARQUIVO CORRIGIDO - SICOSI Backend
+// Data: 21/11/2024
+// Correções aplicadas: 1, 2, 3, 4, 5, 6, 7
+
 import type { NextApiRequest, NextApiResponse } from 'next';
 import Groq from 'groq-sdk';
 import alternativesData from '../../data/alternatives.json';
@@ -75,23 +79,58 @@ interface GroqAnalysisResult {
 
 interface AnalysisResponse {
   success: boolean;
+  productInfo?: {
+    productName: string;
+    pageUrl: string;
+    pageTitle?: string;
+    selectedText?: string;
+  };
+  category?: string;
   originalProduct?: OriginalProduct;
   alternatives?: Alternative[];
+  timestamp?: string;
   error?: string;
 }
 
-// ===== DETECTAR TIPO DE PRODUTO COM IA =====
+// ===== DETECTAR TIPO DE PRODUTO COM IA (CORRIGIDO) =====
 async function detectProductType(
   productName: string, 
   pageTitle: string = '',
   categoryName: string = ''
 ): Promise<string> {
   
+  // ✅ CORREÇÃO 3: FALLBACK INTELIGENTE com dicionário de tipos conhecidos
+  const knownTypes: Record<string, string[]> = {
+    'footwear': ['heel', 'shoe', 'boot', 'sneaker', 'sandal', 'flat', 'slipper', 'pump', 'loafer'],
+    'haircare': ['shampoo', 'conditioner', 'hair oil', 'hair mask', 'hair gel', 'hair spray'],
+    'skincare': ['cream', 'lotion', 'serum', 'cleanser', 'toner', 'moisturizer'],
+    'clothing': ['shirt', 'pant', 'jacket', 'dress', 'skirt', 'coat', 'sweater', 'hoodie'],
+    'electronics': ['laptop', 'phone', 'tablet', 'monitor', 'keyboard', 'mouse', 'headphone']
+  };
+  
+  // Buscar tipo conhecido no nome do produto
+  const lowerName = productName.toLowerCase();
+  const lowerTitle = pageTitle.toLowerCase();
+  
+  for (const [, types] of Object.entries(knownTypes)) {
+    for (const type of types) {
+      // Usar regex com word boundaries
+      const pattern = new RegExp(`\\b${type}s?\\b`, 'i');
+      if (pattern.test(lowerName) || pattern.test(lowerTitle)) {
+        console.log(`🏷️ Type detected (keyword): "${type}"`);
+        return type;
+      }
+    }
+  }
+  
   const groqApiKey = process.env.GROQ_API_KEY;
+  
+  // Se não achou com keywords e não tem API key, usar fallback básico
   if (!groqApiKey) {
-    // Fallback simples se não tiver API key
     const words = productName.split(/\s+/).filter(w => w.length > 2);
-    return words.slice(-2).join(' ');
+    const fallback = words.slice(-2).join(' ');
+    console.log(`🏷️ Type (basic fallback): "${fallback}"`);
+    return fallback;
   }
 
   try {
@@ -103,14 +142,14 @@ Product name: ${productName}
 Page title: ${pageTitle || 'N/A'}
 Category: ${categoryName}
 
-Return ONLY the product type in 1-3 words (e.g., "heels", "shampoo", "laptop", "gift set").
+Return ONLY the product type in 1-2 words (e.g., "heels", "shampoo", "laptop").
 Be specific: if it's heels, say "heels" not "shoes". If it's shampoo, say "shampoo" not "personal care".
 
 Product type:`;
 
     const completion = await groq.chat.completions.create({
       messages: [
-        { role: 'system', content: 'Extract product type. Return 1-3 words only.' },
+        { role: 'system', content: 'Extract product type. Return 1-2 words only.' },
         { role: 'user', content: prompt }
       ],
       model: 'llama-3.3-70b-versatile',
@@ -132,7 +171,7 @@ Product type:`;
     // Fallback: últimas palavras do nome
     const words = productName.split(/\s+/).filter(w => w.length > 2);
     const fallback = words.slice(-2).join(' ');
-    console.log(`🏷️ Type (fallback): "${fallback}"`);
+    console.log(`🏷️ Type (error fallback): "${fallback}"`);
     return fallback;
   }
 }
@@ -167,11 +206,17 @@ export default async function handler(
       return res.status(400).json({ success: false, error: 'productName is required' });
     }
 
-    console.log('📦 Product:', productName);
+    // ✅ LOGGING MELHORADO
+    console.log('📥 [ANALYZE] Request received:', {
+      productName: productName,
+      pageUrl: productInfo.pageUrl,
+      userCountry: productInfo.userCountry || body.userCountry || 'N/A',
+      timestamp: new Date().toISOString()
+    });
 
     // 1. IDENTIFICAR CATEGORIA
     const category = await identifyCategory(productInfo);
-    console.log('📂 Category:', category);
+    console.log('📂 [CATEGORY] Identified:', category);
 
     const categories = alternativesData.categories as Record<string, CategoryData>;
     const categoryData = categories[category];
@@ -181,11 +226,16 @@ export default async function handler(
     }
 
     // 2. BUSCAR PRODUTOS REAIS
-    console.log('🔍 Searching sustainable alternatives...');
+    console.log('🔍 [SEARCH] Searching sustainable alternatives...');
     
     const translatedName = await translateProductName(productName);
     const productType = await detectProductType(translatedName, productInfo.pageTitle || '', categoryData.name);
-    const userCountry = productInfo.userCountry || req.body.userCountry || 'BR';
+    const userCountry = productInfo.userCountry || body.userCountry || 'BR';
+    
+    console.log('🏷️ [TYPE] Detected:', {
+      productType: productType,
+      translatedName: translatedName
+    });
     
     const realProducts = await searchRealProducts(
       productType,
@@ -193,7 +243,7 @@ export default async function handler(
       userCountry
     );
 
-    console.log(`✅ Found ${realProducts.length} products`);
+    console.log(`✅ [SEARCH] Found ${realProducts.length} products`);
 
     // 3. ANALISAR COM GROQ
     const analysis = await analyzeWithGroq(
@@ -204,22 +254,49 @@ export default async function handler(
       realProducts
     );
 
-    return res.status(200).json({
-      success: true,
-      originalProduct: analysis.originalProduct,
-      alternatives: analysis.alternatives
+    console.log('🤖 [GROQ] Analysis complete:', {
+      originalScore: analysis.originalProduct.sustainability_score,
+      alternativesCount: analysis.alternatives.length,
+      averageScore: analysis.alternatives.length > 0 
+        ? Math.round(analysis.alternatives.reduce((sum, a) => sum + a.sustainability_score, 0) / analysis.alternatives.length)
+        : 0
     });
 
+    // ✅ CORREÇÃO 1: ESTRUTURA DE RESPOSTA COMPLETA
+    const response: AnalysisResponse = {
+      success: true,
+      productInfo: {
+        productName: productName,
+        pageUrl: productInfo.pageUrl || '',
+        pageTitle: productInfo.pageTitle || '',
+        selectedText: productInfo.selectedText || ''
+      },
+      category: category,
+      originalProduct: analysis.originalProduct,
+      alternatives: analysis.alternatives,
+      timestamp: new Date().toISOString()
+    };
+
+    console.log('📤 [ANALYZE] Response sent:', {
+      success: true,
+      category: category,
+      alternativesCount: analysis.alternatives.length,
+      timestamp: response.timestamp
+    });
+
+    return res.status(200).json(response);
+
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ [ERROR]:', error);
     return res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
     });
   }
 }
 
-// ===== BUSCAR PRODUTOS REAIS =====
+// ===== BUSCAR PRODUTOS REAIS (CORRIGIDO) =====
 async function searchRealProducts(
   productType: string,
   categoryData: CategoryData,
@@ -233,47 +310,81 @@ async function searchRealProducts(
   };
   const countryName = countryNames[userCountry] || 'Brazil';
   
-  // Usar certificações da categoria para tornar busca mais específica
-  const certKeywords = categoryData.certifications.slice(0, 3).join(' OR ');
+  // ✅ CORREÇÃO 4: QUERY SIMPLIFICADA com fallback
+  const topCert = categoryData.certifications[0] || 'eco-friendly';
   
-  const query = `sustainable eco-friendly ${productType} ${certKeywords} ${countryName} buy`;
-  console.log('🔎 Query:', query);
+  // Query inicial (específica)
+  let query = `sustainable ${productType} ${topCert} buy online`;
+  console.log('🔎 [SEARCH] Query (specific):', query);
 
   try {
-    const results = await webSearchClient.search(query, {
+    let results = await webSearchClient.search(query, {
       maxResults: 50,
       searchDepth: 'advanced',
       includeAnswer: false
     });
 
+    // ✅ FALLBACK: Se poucos resultados, simplificar query
+    if (!results.success || !results.results || results.results.length < 5) {
+      console.log('⚠️ [SEARCH] Few results, trying broader query...');
+      query = `eco-friendly sustainable ${productType} shop`;
+      console.log('🔎 [SEARCH] Query (broad):', query);
+      
+      results = await webSearchClient.search(query, {
+        maxResults: 50,
+        searchDepth: 'advanced',
+        includeAnswer: false
+      });
+    }
+
     if (!results.success || !results.results) {
       return [];
     }
 
-    // Filtrar produtos válidos
+    // ✅ CORREÇÃO 5: FILTROS MAIS FLEXÍVEIS
     const validProducts = results.results.filter(r => {
       const url = r.url.toLowerCase();
       const text = `${r.title} ${r.snippet}`.toLowerCase();
       
-      // Deve ter padrão de produto
-      const isProduct = ['/dp/', '/product/', '/p/', '/item/', '/listing/', '/products/'].some(p => url.includes(p));
+      // Padrão de produto (mais flexível)
+      const productPatterns = [
+        '/dp/', '/product/', '/p/', '/item/', '/listing/', '/products/',
+        '-p-', '/buy/', '/shop/'
+      ];
+      const isProduct = productPatterns.some(p => url.includes(p)) || 
+                       /\/[\w-]+-\d+/.test(url); // Padrão "nome-produto-123"
       
       // Não deve ser artigo
-      const isArticle = ['/blog/', '/article/', '/news/', '/guide/', '/review', 'youtube.', 'wikipedia.'].some(p => url.includes(p));
+      const isArticle = [
+        '/blog/', '/article/', '/news/', '/guide/', '/review', 
+        'youtube.', 'wikipedia.', '/best-', '/top-'
+      ].some(p => url.includes(p));
       
-      // Deve ter keyword sustentável
-      const isSustainable = ['sustainable', 'eco', 'organic', 'recycled', 'natural', 'fair trade'].some(kw => text.includes(kw));
+      // Deve ter keyword sustentável (mais flexível)
+      const sustainKeywords = [
+        'sustain', 'eco', 'organic', 'recycle', 'natural', 
+        'fair trade', 'ethical', 'green'
+      ];
+      const isSustainable = sustainKeywords.some(kw => text.includes(kw)) ||
+                           categoryData.certifications.some(cert => 
+                             text.includes(cert.toLowerCase())
+                           );
       
-      // Deve ter o tipo de produto
-      const hasType = productType.toLowerCase().split(/\s+/).some(word => text.includes(word));
+      // Deve ter o tipo de produto (normalizado para plural/singular)
+      const typeWords = productType.toLowerCase().split(/\s+/);
+      const hasType = typeWords.some(word => {
+        const singular = word.replace(/s$/, '');
+        const plural = word + (word.endsWith('s') ? '' : 's');
+        return text.includes(word) || text.includes(singular) || text.includes(plural);
+      });
       
       // Deve parecer e-commerce
-      const hasPrice = /\$|€|£|R\$|price|buy|shop/.test(text);
+      const hasPrice = /\$|€|£|R\$|price|buy|shop|store|cart/.test(text);
       
       return isProduct && !isArticle && isSustainable && hasType && hasPrice;
     });
 
-    console.log(`✅ Filtered: ${validProducts.length}/${results.results.length}`);
+    console.log(`✅ [SEARCH] Filtered: ${validProducts.length}/${results.results.length}`);
 
     // Remover duplicatas
     const unique = Array.from(
@@ -287,19 +398,56 @@ async function searchRealProducts(
     }));
 
   } catch (error) {
-    console.error('❌ Search error:', error);
+    console.error('❌ [SEARCH] Error:', error);
     return [];
   }
 }
 
-// ===== TRADUZIR =====
+// ===== TRADUZIR (CORRIGIDO) =====
 async function translateProductName(name: string): Promise<string> {
+  // Se já está em inglês, retornar
   if (/^[a-zA-Z0-9\s\-_]+$/.test(name)) {
     return name;
   }
 
+  // ✅ CORREÇÃO 6: DICIONÁRIO BÁSICO DE TRADUÇÃO (fallback)
+  const basicTranslations: Record<string, string> = {
+    // Calçados
+    'sapato': 'shoe', 'sapatos': 'shoes',
+    'salto': 'heel', 'saltos': 'heels',
+    'tênis': 'sneaker', 'tenis': 'sneaker',
+    'bota': 'boot', 'botas': 'boots',
+    'sandália': 'sandal', 'sandalia': 'sandal',
+    // Cuidados pessoais
+    'shampoo': 'shampoo', 'condicionador': 'conditioner',
+    'sabonete': 'soap', 'creme': 'cream',
+    // Roupas
+    'camisa': 'shirt', 'calça': 'pants', 'calca': 'pants',
+    'jaqueta': 'jacket', 'casaco': 'coat',
+    // Cores
+    'preto': 'black', 'branco': 'white',
+    'vermelho': 'red', 'azul': 'blue', 'verde': 'green',
+    // Outros
+    'de': 'of', 'para': 'for', 'com': 'with'
+  };
+  
+  // Tentar tradução básica primeiro
+  const words = name.toLowerCase().split(/\s+/);
+  const basicTranslation = words
+    .map(word => basicTranslations[word] || word)
+    .join(' ');
+  
+  // Se conseguiu traduzir algo, usar
+  if (basicTranslation !== name.toLowerCase()) {
+    console.log(`🌐 [TRANSLATE] Basic: "${name}" → "${basicTranslation}"`);
+    return basicTranslation;
+  }
+
   const groqApiKey = process.env.GROQ_API_KEY;
-  if (!groqApiKey) return name;
+  if (!groqApiKey) {
+    console.log('⚠️ [TRANSLATE] No API key, using basic translation');
+    return basicTranslation;
+  }
 
   try {
     const groq = new Groq({ apiKey: groqApiKey });
@@ -313,9 +461,18 @@ async function translateProductName(name: string): Promise<string> {
       max_tokens: 50
     });
 
-    return completion.choices[0]?.message?.content?.trim() || name;
-  } catch {
-    return name;
+    const translation = completion.choices[0]?.message?.content?.trim();
+    if (translation && translation.length > 0) {
+      console.log(`🌐 [TRANSLATE] AI: "${name}" → "${translation}"`);
+      return translation;
+    }
+    
+    console.log('⚠️ [TRANSLATE] AI failed, using basic translation');
+    return basicTranslation;
+    
+  } catch (error) {
+    console.error('❌ [TRANSLATE] Error:', error);
+    return basicTranslation;
   }
 }
 
@@ -329,7 +486,7 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   const translated = await translateProductName(name);
   const text = `${translated} ${desc} ${title} ${url}`.toLowerCase();
   
-  console.log('🔍 Text:', text.substring(0, 150));
+  console.log('🔍 [CATEGORY] Text sample:', text.substring(0, 150));
 
   const categories = alternativesData.categories as Record<string, CategoryData>;
   let best = { category: '', score: 0 };
@@ -354,15 +511,15 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   }
 
   if (best.score === 0) {
-    console.warn('⚠️ No category match, using general');
+    console.warn('⚠️ [CATEGORY] No match, using general');
     return 'general';
   }
 
-  console.log(`📊 Best: ${best.category} (score: ${best.score})`);
+  console.log(`📊 [CATEGORY] Best: ${best.category} (score: ${best.score})`);
   return best.category;
 }
 
-// ===== ANALISAR COM GROQ =====
+// ===== ANALISAR COM GROQ (CORRIGIDO) =====
 async function analyzeWithGroq(
   productInfo: ProductInfo,
   category: string,
@@ -428,7 +585,7 @@ RETURN JSON:
   "originalProduct": {
     "name": "${productName}",
     "category": "${category}",
-    "sustainability_score": 30-50,
+    "sustainability_score": 20-45,
     "summary": "Environmental impact analysis",
     "environmental_impact": {
       "carbon_footprint": "assessment",
@@ -467,54 +624,63 @@ RETURN JSON:
     });
 
     const content = completion.choices[0]?.message?.content;
-    if (!content) throw new Error('No response');
+    if (!content) throw new Error('No response from Groq');
 
     const result = JSON.parse(content) as GroqAnalysisResult;
 
-    // VALIDAÇÃO PÓS-IA
+    // ✅ CORREÇÃO 2: VALIDAÇÃO PÓS-IA COM REGEX
     if (result.alternatives) {
       const typeLower = productType.toLowerCase();
+      
+      // ✅ Usar REGEX com word boundaries ao invés de includes()
+      const wrongTypes: Record<string, string[]> = {
+        'heels': ['\\bsneakers?\\b', '\\bboots?\\b', '\\bsandals?\\b', '\\bflats?\\b', '\\bloafers?\\b'],
+        'sneakers': ['\\bheels?\\b', '\\bboots?\\b', '\\bsandals?\\b', '\\bdress\\s+shoes?\\b', '\\bpumps?\\b'],
+        'boots': ['\\bheels?\\b', '\\bsneakers?\\b', '\\bsandals?\\b', '\\bflats?\\b'],
+        'sandals': ['\\bheels?\\b', '\\bboots?\\b', '\\bsneakers?\\b', '\\bflats?\\b'],
+        'flats': ['\\bheels?\\b', '\\bboots?\\b', '\\bsneakers?\\b', '\\bsandals?\\b'],
+        'shampoo': ['\\bconditioners?\\b', '\\bsoaps?\\b', '\\blotions?\\b', '\\bgels?\\b'],
+        'conditioner': ['\\bshampoos?\\b', '\\bsoaps?\\b', '\\blotions?\\b'],
+        'jacket': ['\\bpants?\\b', '\\bshirts?\\b', '\\bshoes?\\b', '\\bskirts?\\b'],
+        'laptop': ['\\bphones?\\b', '\\btablets?\\b', '\\bmonitors?\\b', '\\bkeyboards?\\b'],
+        'phone': ['\\blaptops?\\b', '\\btablets?\\b', '\\bwatches?\\b', '\\bcomputers?\\b']
+      };
       
       result.alternatives = result.alternatives.filter(alt => {
         const altName = alt.name.toLowerCase();
         
         // Rejeitar livros/guias
-        if (/book|guide|article|tips|living/.test(altName)) {
-          console.log(`❌ Rejected (book): ${alt.name}`);
+        if (/\b(book|guide|article|tips|living)\b/.test(altName)) {
+          console.log(`❌ [VALIDATION] Rejected (book): ${alt.name}`);
           return false;
         }
         
         // Rejeitar score baixo
         if (alt.sustainability_score < 70) {
-          console.log(`❌ Rejected (score): ${alt.name} (${alt.sustainability_score})`);
+          console.log(`❌ [VALIDATION] Rejected (score): ${alt.name} (${alt.sustainability_score})`);
           return false;
         }
         
-        // Rejeitar tipo diferente
-        const wrongTypes: Record<string, string[]> = {
-          'heels': ['sneaker', 'boot', 'sandal', 'flat'],
-          'sneakers': ['heel', 'boot', 'sandal', 'dress shoe'],
-          'boots': ['heel', 'sneaker', 'sandal'],
-          'shampoo': ['conditioner', 'soap', 'lotion'],
-          'jacket': ['pant', 'shirt', 'shoe']
-        };
+        // ✅ Rejeitar tipo diferente usando REGEX
+        const wrongTypePatterns = wrongTypes[typeLower]?.map(pattern => 
+          new RegExp(pattern, 'i')
+        ) || [];
         
-        const rejects = wrongTypes[typeLower] || [];
-        if (rejects.some(w => altName.includes(w))) {
-          console.log(`❌ Rejected (type): ${alt.name} (want: ${productType})`);
+        if (wrongTypePatterns.some(pattern => pattern.test(altName))) {
+          console.log(`❌ [VALIDATION] Rejected (wrong type): ${alt.name} (expected: ${productType})`);
           return false;
         }
         
-        console.log(`✅ Valid: ${alt.name} (${alt.sustainability_score})`);
+        console.log(`✅ [VALIDATION] Valid: ${alt.name} (${alt.sustainability_score})`);
         return true;
       });
     }
 
-    console.log(`🌿 Final alternatives: ${result.alternatives.length}`);
+    console.log(`🌿 [VALIDATION] Final alternatives: ${result.alternatives.length}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Groq error:', error);
+    console.error('❌ [GROQ] Error:', error);
     throw error;
   }
 }
