@@ -511,8 +511,8 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   }
 
   if (best.score === 0) {
-    console.warn('⚠️ [CATEGORY] No match, using general');
-    return 'general';
+    console.warn('⚠️ [CATEGORY] No match, using textiles_clothing as fallback');
+    return 'textiles_clothing';
   }
 
   console.log(`📊 [CATEGORY] Best: ${best.category} (score: ${best.score})`);
