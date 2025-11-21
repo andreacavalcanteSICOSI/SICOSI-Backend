@@ -349,11 +349,19 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   const productName = productInfo.productName || productInfo.product_name || '';
   const description = productInfo.description || '';
   const selectedText = productInfo.selectedText || '';
+  const pageUrl = productInfo.pageUrl || productInfo.product_url || '';
+  
+  // ✅ NOVO: Incluir breadcrumbs e hints
+  const breadcrumbs = (productInfo as any).breadcrumbs || '';
+  const categoryHint = (productInfo as any).categoryHint || '';
   
   const translatedName = await translateProductName(productName);
-  const text = `${translatedName} ${description} ${selectedText}`.toLowerCase();
+  
+  // ✅ MELHORADO: Texto expandido com mais contexto
+  const text = `${translatedName} ${description} ${selectedText} ${breadcrumbs} ${categoryHint} ${pageUrl}`.toLowerCase();
+  
+  console.log('🔍 Texto para análise:', text.substring(0, 200));
 
-  // ✅ FIX: Acessar categories com index signature
   const categories = alternativesData.categories as Record<string, CategoryData>;
   let bestMatch = { category: '', score: 0 };
 
@@ -364,16 +372,48 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
     for (const keyword of keywords) {
       const keywordLower = keyword.toLowerCase();
       const matches = text.match(new RegExp(keywordLower, 'g'));
-      if (matches) score += matches.length;
-      if (translatedName.toLowerCase().includes(keywordLower)) score += 2;
+      if (matches) {
+        score += matches.length;
+        console.log(`✅ Keyword '${keyword}' encontrada ${matches.length}x em ${categoryKey}`);
+      }
+      if (translatedName.toLowerCase().includes(keywordLower)) {
+        score += 2;
+      }
     }
 
     if (score > bestMatch.score) {
       bestMatch = { category: categoryKey, score };
     }
   }
+  
+  console.log('📊 Melhor match:', bestMatch);
+
+  // ✅ MELHORADO: Se score muito baixo, tentar inferir da URL
+  if (bestMatch.score === 0 || bestMatch.score < 2) {
+    const urlHints: Record<string, string> = {
+      'clothing': 'textiles_clothing',
+      'shoes': 'textiles_clothing',
+      'fashion': 'textiles_clothing',
+      'jewelry': 'textiles_clothing',
+      'electronics': 'electronics',
+      'phone': 'electronics',
+      'computer': 'electronics',
+      'kitchen': 'food_beverages',
+      'food': 'food_beverages',
+      'beauty': 'personal_care',
+      'cosmetics': 'personal_care'
+    };
+    
+    for (const [hint, category] of Object.entries(urlHints)) {
+      if (text.includes(hint)) {
+        console.log(`💡 Categoria inferida da URL: ${category} (hint: ${hint})`);
+        return category;
+      }
+    }
+  }
 
   if (bestMatch.score === 0) {
+    console.warn('⚠️ Nenhuma categoria identificada, usando "general"');
     bestMatch = { category: 'general', score: 0 };
   }
 
