@@ -32,7 +32,6 @@ interface SustainabilityCriterion {
   guidelines: string[];
 }
 
-// ✅ FIX: Tipo simples que corresponde ao JSON real
 interface CategoryData {
   name: string;
   keywords: string[];
@@ -79,38 +78,6 @@ interface AnalysisResponse {
   originalProduct?: OriginalProduct;
   alternatives?: Alternative[];
   error?: string;
-}
-
-// ===== FUNÇÃO: EXTRAIR TIPO DE PRODUTO =====
-function extractProductType(productName: string): string {
-  const lowerName = productName.toLowerCase();
-  
-  const patterns: Record<string, string[]> = {
-    'body wash': ['body wash', 'shower gel', 'sabonete líquido'],
-    'shampoo': ['shampoo', 'xampu'],
-    'conditioner': ['conditioner', 'condicionador'],
-    'gift set': ['gift set', 'kit', 'conjunto'],
-    'deodorant': ['deodorant', 'desodorante'],
-    'soap': ['soap', 'sabonete', 'sabão'],
-    'toothpaste': ['toothpaste', 'pasta de dente'],
-    'lotion': ['lotion', 'loção', 'creme'],
-    'perfume': ['perfume', 'fragrance', 'cologne'],
-    'phone': ['phone', 'smartphone', 'celular', 'iphone', 'samsung'],
-    'laptop': ['laptop', 'notebook', 'computer'],
-    'headphones': ['headphones', 'earbuds', 'fone'],
-    'shoes': ['shoes', 'sneakers', 'sapatos', 'tênis', 'heels'],
-    'jacket': ['jacket', 'coat', 'jaqueta', 'casaco'],
-    'backpack': ['backpack', 'mochila', 'bag'],
-  };
-  
-  for (const [type, keywords] of Object.entries(patterns)) {
-    if (keywords.some(kw => lowerName.includes(kw))) {
-      return type;
-    }
-  }
-  
-  const words = productName.split(' ').filter(w => w.length > 2);
-  return words.slice(-2).join(' ');
 }
 
 // ===== HANDLER =====
@@ -161,7 +128,6 @@ export default async function handler(
     const category = await identifyCategory(productInfo);
     console.log('📂 Category identified:', category);
 
-    // ✅ FIX: Acessar categories com index signature
     const categories = alternativesData.categories as Record<string, CategoryData>;
     const categoryData = categories[category];
 
@@ -172,109 +138,89 @@ export default async function handler(
       });
     }
 
-    console.log('🔍 Searching for REAL sustainable product alternatives...');
+    console.log('🔍 Searching for sustainable alternatives...');
     
     let realProducts: Array<{title: string, url: string, snippet: string}> = [];
     
     try {
       const translatedProductName = await translateProductName(finalProductName);
-      const productType = extractProductType(translatedProductName);
       
-      const userCountry = productInfo.userCountry || req.body.userCountry || 'BR';
-      const countryNames: Record<string, string> = {
-        'BR': 'Brazil', 'US': 'United States', 'UK': 'United Kingdom',
-        'CA': 'Canada', 'AU': 'Australia', 'DE': 'Germany',
-        'FR': 'France', 'ES': 'Spain', 'IT': 'Italy'
-      };
-      const countryName = countryNames[userCountry] || 'Brazil';
+      // ✅ BUSCA GENÉRICA - SEM HARDCODE DE SITES
+      const searchQuery = `sustainable eco-friendly ${translatedProductName} buy online`;
       
-      const amazonDomain = userCountry === 'BR' ? 'com.br' : userCountry === 'UK' ? 'co.uk' : 'com';
+      console.log('🔎 Generic search query:', searchQuery);
       
-      const searchQueries = [
-        `site:amazon.${amazonDomain} sustainable eco-friendly organic ${productType}`,
-        `site:etsy.com eco-friendly natural ${productType}`,
-        `"sustainable ${productType}" ${countryName} buy online product -article -blog -guide`,
-      ];
+      const tavilyResults = await webSearchClient.search(searchQuery, {
+        maxResults: 30,
+        searchDepth: 'advanced',
+        includeAnswer: false
+      });
       
-      console.log('🔎 Product type:', productType);
-      console.log('🌍 User country:', userCountry, `(${countryName})`);
-      console.log('🔎 Search queries:', searchQueries);
-      
-      for (const query of searchQueries) {
-        try {
-          const tavilyResults = await webSearchClient.search(query, {
-            maxResults: 20,
-            searchDepth: 'advanced',
-            includeAnswer: false
-          });
-          
-          if (tavilyResults.success && tavilyResults.results) {
-            console.log(`📊 Query returned ${tavilyResults.results.length} results`);
-            
-            const filteredResults = tavilyResults.results.filter(r => {
-              const url = r.url.toLowerCase();
-              const text = `${r.title} ${r.snippet}`.toLowerCase();
-              
-              const productURLPatterns = [
-                '/dp/', '/product/', '/p/', '/item/', '/listing/', '/products/', '-p-'
-              ];
-              const hasProductURL = productURLPatterns.some(pattern => url.includes(pattern));
-              
-              const excludePatterns = [
-                '/blog/', '/article/', '/news/', '/guide/', '/how-to/', '/features/',
-                '/best-', '/top-', '/review', 'wikipedia.org', 'youtube.com'
-              ];
-              const isExcluded = excludePatterns.some(pattern => url.includes(pattern));
-              
-              const sustainableKeywords = [
-                'sustainable', 'eco', 'organic', 'fair trade', 'biodegradable',
-                'recycled', 'natural', 'green', 'sustentável', 'ecológico'
-              ];
-              const hasSustainableKeyword = sustainableKeywords.some(kw => text.includes(kw));
-              
-              const ecommerceDomains = [
-                'amazon', 'etsy', 'ebay', 'walmart', 'target', 'mercado',
-                'shopee', 'aliexpress', 'magalu', 'americanas'
-              ];
-              const isEcommerce = ecommerceDomains.some(domain => url.includes(domain));
-              
-              const isValid = hasProductURL && !isExcluded && hasSustainableKeyword && isEcommerce;
-              
-              if (isValid) {
-                console.log(`✅ Valid product: ${r.title.substring(0, 50)}`);
-              }
-              
-              return isValid;
-            });
-            
-            if (filteredResults.length > 0) {
-              realProducts.push(...filteredResults.map(r => ({
-                title: r.title,
-                url: r.url,
-                snippet: r.snippet
-              })));
-              
-              console.log(`✅ Found ${filteredResults.length} valid products`);
-            }
-          }
-        } catch (queryError) {
-          console.error(`❌ Query error:`, queryError);
-          continue;
-        }
+      if (tavilyResults.success && tavilyResults.results) {
+        console.log(`📊 Search returned ${tavilyResults.results.length} results`);
         
-        if (realProducts.length >= 5) break;
+        // ✅ FILTRO GENÉRICO - Identifica produtos automaticamente
+        const filteredResults = tavilyResults.results.filter(r => {
+          const url = r.url.toLowerCase();
+          const text = `${r.title} ${r.snippet}`.toLowerCase();
+          
+          // Padrões GENÉRICOS de URL de produto (qualquer e-commerce)
+          const productURLPatterns = [
+            '/product/', '/p/', '/item/', '/dp/', '/listing/', 
+            '/products/', '-p-', '/buy/', '/shop/'
+          ];
+          const hasProductURL = productURLPatterns.some(pattern => url.includes(pattern));
+          
+          // Excluir páginas que claramente NÃO são produtos
+          const excludePatterns = [
+            '/blog/', '/article/', '/news/', '/guide/', '/how-to/', 
+            '/features/', '/best-', '/top-', '/review', '/compare',
+            'wikipedia.', 'youtube.', '/forum/', '/category/'
+          ];
+          const isExcluded = excludePatterns.some(pattern => url.includes(pattern));
+          
+          // Deve ter palavras-chave de sustentabilidade
+          const sustainableKeywords = [
+            'sustainable', 'eco', 'organic', 'fair trade', 'biodegradable',
+            'recycled', 'natural', 'green', 'ethical', 'renewable',
+            'sustentável', 'ecológico', 'orgânico', 'reciclado'
+          ];
+          const hasSustainableKeyword = sustainableKeywords.some(kw => text.includes(kw));
+          
+          // Deve parecer um e-commerce (qualquer um)
+          const hasPrice = text.match(/\$|€|£|R\$|price|comprar|buy/i);
+          
+          const isValid = hasProductURL && !isExcluded && hasSustainableKeyword && hasPrice;
+          
+          if (isValid) {
+            console.log(`✅ Valid product: ${r.title.substring(0, 60)}`);
+          }
+          
+          return isValid;
+        });
+        
+        if (filteredResults.length > 0) {
+          realProducts = filteredResults.map(r => ({
+            title: r.title,
+            url: r.url,
+            snippet: r.snippet
+          }));
+          
+          console.log(`✅ Found ${realProducts.length} valid products`);
+        }
       }
       
+      // Remover duplicatas por URL
       const uniqueProducts = Array.from(
         new Map(realProducts.map(p => [p.url, p])).values()
-      ).slice(0, 8);
+      ).slice(0, 10);
       
       realProducts = uniqueProducts;
-      console.log(`✅ Final: ${realProducts.length} unique products found`);
+      console.log(`✅ Final: ${realProducts.length} unique products`);
       
-    } catch (tavilyError) {
-      console.error('❌ Tavily error:', tavilyError);
-      console.warn('⚠️ Continuing without Tavily results');
+    } catch (searchError) {
+      console.error('❌ Search error:', searchError);
+      console.warn('⚠️ Continuing without search results');
     }
 
     const analysis = await analyzeWithGroq(
@@ -351,18 +297,16 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   const description = productInfo.description || '';
   const selectedText = productInfo.selectedText || '';
   const pageUrl = productInfo.pageUrl || productInfo.product_url || '';
-  const pageTitle = productInfo.pageTitle || ''; // ✅ ADICIONADO
+  const pageTitle = productInfo.pageTitle || '';
   
-  // Incluir breadcrumbs e hints
   const breadcrumbs = (productInfo as any).breadcrumbs || '';
   const categoryHint = (productInfo as any).categoryHint || '';
   
   const translatedName = await translateProductName(productName);
   
-  // ✅ CORRIGIDO: Incluir pageTitle no texto de análise
   const text = `${translatedName} ${description} ${selectedText} ${breadcrumbs} ${categoryHint} ${pageUrl} ${pageTitle}`.toLowerCase();
   
-  console.log('🔍 Texto para análise:', text.substring(0, 200));
+  console.log('🔍 Text for analysis:', text.substring(0, 200));
 
   const categories = alternativesData.categories as Record<string, CategoryData>;
   let bestMatch = { category: '', score: 0 };
@@ -376,7 +320,7 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
       const matches = text.match(new RegExp(keywordLower, 'g'));
       if (matches) {
         score += matches.length;
-        console.log(`✅ Keyword '${keyword}' encontrada ${matches.length}x em ${categoryKey}`);
+        console.log(`✅ Keyword '${keyword}' found ${matches.length}x in ${categoryKey}`);
       }
       if (translatedName.toLowerCase().includes(keywordLower)) {
         score += 2;
@@ -388,37 +332,10 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
     }
   }
   
-  console.log('📊 Melhor match:', bestMatch);
-
-  // Se score muito baixo, tentar inferir da URL
-  if (bestMatch.score === 0 || bestMatch.score < 2) {
-    const urlHints: Record<string, string> = {
-      'clothing': 'textiles_clothing',
-      'shoes': 'textiles_clothing',
-      'fashion': 'textiles_clothing',
-      'jewelry': 'textiles_clothing',
-      'heels': 'textiles_clothing',
-      'boots': 'textiles_clothing',
-      'sneakers': 'textiles_clothing',
-      'electronics': 'electronics',
-      'phone': 'electronics',
-      'computer': 'electronics',
-      'kitchen': 'food_beverages',
-      'food': 'food_beverages',
-      'beauty': 'personal_care',
-      'cosmetics': 'personal_care'
-    };
-    
-    for (const [hint, category] of Object.entries(urlHints)) {
-      if (text.includes(hint)) {
-        console.log(`💡 Categoria inferida da URL: ${category} (hint: ${hint})`);
-        return category;
-      }
-    }
-  }
+  console.log('📊 Best match:', bestMatch);
 
   if (bestMatch.score === 0) {
-    console.warn('⚠️ Nenhuma categoria identificada, usando "general"');
+    console.warn('⚠️ No category identified, using "general"');
     bestMatch = { category: 'general', score: 0 };
   }
 
@@ -442,79 +359,93 @@ async function analyzeWithGroq(
   const productName = productInfo.productName || productInfo.product_name || '';
 
   const criteriaText = Object.entries(categoryData.sustainability_criteria)
-    .map(([key, value]) => `${key} (peso: ${value.weight}): ${value.guidelines.join(', ')}`)
+    .map(([key, value]) => `${key} (weight: ${value.weight}): ${value.guidelines.join(', ')}`)
     .join('\n');
 
   const realProductsText = realProducts.length > 0
-    ? `\n\nPRODUTOS SUSTENTÁVEIS REAIS ENCONTRADOS:\n${
+    ? `\n\nREAL SUSTAINABLE PRODUCTS FOUND:\n${
         realProducts.map((p, i) => 
-          `${i + 1}. ${p.title || 'No title'}\n   URL: ${p.url}\n   Info: ${(p.snippet || '').substring(0, 100)}\n`
+          `${i + 1}. ${p.title}\n   URL: ${p.url}\n   Info: ${p.snippet.substring(0, 150)}\n`
         ).join('\n')
       }`
     : '';
 
   const prompt = `
-Você é um especialista em sustentabilidade.
+You are a sustainability expert analyzing products.
 
-PRODUTO: ${productName}
-CATEGORIA: ${category}
+ORIGINAL PRODUCT: ${productName}
+CATEGORY: ${category}
 
-CRITÉRIOS:
+SUSTAINABILITY CRITERIA:
 ${criteriaText}
 ${realProductsText}
 
-INSTRUÇÕES PARA ALTERNATIVAS:
+CRITICAL INSTRUCTIONS FOR ALTERNATIVES:
 ${realProducts.length > 0 ? `
-- Você recebeu ${realProducts.length} produtos REAIS
-- Use APENAS produtos que sejam REALMENTE alternativas a "${productName}"
-- Para cada alternativa:
-  * Nome EXATO do produto encontrado
-  * URL EXATA fornecida
-  * Score MAIOR que o original
-  * VALIDE que é da mesma categoria
+- You received ${realProducts.length} REAL products from web search
+- Use ONLY products from the list above as alternatives
+- For each alternative:
+  * Use EXACT product name from search results
+  * Use EXACT URL provided
+  * Sustainability score must be HIGHER than original (minimum 70)
+  * Product MUST be same category as original
+  * VALIDATE it's truly a sustainable alternative
+- If a product from search is NOT suitable (wrong category, not sustainable enough), DO NOT include it
+- Better to return fewer high-quality alternatives than many irrelevant ones
 ` : `
-- Sugira produtos REAIS que existem no mercado
-- Seja ESPECÍFICO (marca + modelo)
-- Forneça lojas reais onde comprar
-- Score MAIOR que o original
+- Suggest REAL products that exist in the market
+- Be SPECIFIC (brand + model)
+- Provide real stores where to buy
+- Sustainability score must be HIGHER than original (minimum 70)
+- NEVER invent products or brands
 `}
 
-RETORNE JSON:
+RETURN VALID JSON:
 {
   "originalProduct": {
     "name": "${productName}",
     "category": "${category}",
-    "sustainability_score": 40,
-    "summary": "resumo",
-    "environmental_impact": {...},
-    "strengths": [],
-    "weaknesses": [],
-    "certifications_found": [],
-    "recommendations": []
+    "sustainability_score": 35,
+    "summary": "Brief analysis of environmental impact",
+    "environmental_impact": {
+      "carbon_footprint": "Assessment",
+      "water_usage": "Assessment",
+      "recyclability": "Assessment",
+      "toxicity": "Assessment"
+    },
+    "strengths": ["List actual strengths if any"],
+    "weaknesses": ["List main environmental issues"],
+    "certifications_found": ["List if any, empty if none"],
+    "recommendations": ["Specific actions for more sustainable use"]
   },
   "alternatives": [
     {
-      "name": "Nome ESPECÍFICO do produto",
-      "description": "...",
-      "benefits": "...",
+      "name": "EXACT product name from search results",
+      "description": "Clear description of the product",
+      "benefits": "Why it's more sustainable than original",
       "sustainability_score": 85,
-      "where_to_buy": "Loja específica",
-      "certifications": [],
-      "product_url": "URL real"
+      "where_to_buy": "Specific store name",
+      "certifications": ["Relevant certifications if any"],
+      "product_url": "EXACT URL from search results"
     }
   ]
 }
+
+IMPORTANT: Only include alternatives that are TRULY more sustainable and from the SAME category!
 `;
 
   try {
     const completion = await groq.chat.completions.create({
       messages: [
-        { role: 'system', content: 'Retorne JSON válido. Use produtos reais fornecidos.' },
+        { 
+          role: 'system', 
+          content: 'Return valid JSON. Use only real products provided in search results. Quality over quantity - better 2 great alternatives than 10 mediocre ones.' 
+        },
         { role: 'user', content: prompt }
       ],
       model: 'llama-3.3-70b-versatile',
-      temperature: 0.5,
-      max_tokens: 3000,
+      temperature: 0.3,
+      max_tokens: 4000,
       response_format: { type: 'json_object' }
     });
 
@@ -523,10 +454,23 @@ RETORNE JSON:
 
     const result = JSON.parse(content) as GroqAnalysisResult;
     
-    console.log('🌿 Alternatives:', result.alternatives.map(a => ({
-      name: a.name,
+    // Filtrar alternativas de baixa qualidade
+    if (result.alternatives) {
+      result.alternatives = result.alternatives.filter(alt => 
+        alt.sustainability_score >= 70 && 
+        alt.name && 
+        alt.name.length > 3 &&
+        !alt.name.toLowerCase().includes('guide') &&
+        !alt.name.toLowerCase().includes('book') &&
+        !alt.name.toLowerCase().includes('article')
+      );
+    }
+    
+    console.log('🌿 Quality alternatives:', result.alternatives.length);
+    console.log('📋 Alternatives:', result.alternatives.map(a => ({
+      name: a.name.substring(0, 50),
       score: a.sustainability_score,
-      url: a.product_url || 'N/A'
+      hasUrl: !!a.product_url
     })));
     
     return result;
