@@ -12,6 +12,7 @@ interface ProductInfo {
   pageUrl?: string;
   product_url?: string;
   selectedText?: string;
+  pageTitle?: string;
   price?: string;
   images?: string[];
   userCountry?: string;
@@ -97,7 +98,7 @@ function extractProductType(productName: string): string {
     'phone': ['phone', 'smartphone', 'celular', 'iphone', 'samsung'],
     'laptop': ['laptop', 'notebook', 'computer'],
     'headphones': ['headphones', 'earbuds', 'fone'],
-    'shoes': ['shoes', 'sneakers', 'sapatos', 'tênis'],
+    'shoes': ['shoes', 'sneakers', 'sapatos', 'tênis', 'heels'],
     'jacket': ['jacket', 'coat', 'jaqueta', 'casaco'],
     'backpack': ['backpack', 'mochila', 'bag'],
   };
@@ -350,15 +351,16 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   const description = productInfo.description || '';
   const selectedText = productInfo.selectedText || '';
   const pageUrl = productInfo.pageUrl || productInfo.product_url || '';
+  const pageTitle = productInfo.pageTitle || ''; // ✅ ADICIONADO
   
-  // ✅ NOVO: Incluir breadcrumbs e hints
+  // Incluir breadcrumbs e hints
   const breadcrumbs = (productInfo as any).breadcrumbs || '';
   const categoryHint = (productInfo as any).categoryHint || '';
   
   const translatedName = await translateProductName(productName);
   
-  // ✅ MELHORADO: Texto expandido com mais contexto
-  const text = `${translatedName} ${description} ${selectedText} ${breadcrumbs} ${categoryHint} ${pageUrl}`.toLowerCase();
+  // ✅ CORRIGIDO: Incluir pageTitle no texto de análise
+  const text = `${translatedName} ${description} ${selectedText} ${breadcrumbs} ${categoryHint} ${pageUrl} ${pageTitle}`.toLowerCase();
   
   console.log('🔍 Texto para análise:', text.substring(0, 200));
 
@@ -388,13 +390,16 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   
   console.log('📊 Melhor match:', bestMatch);
 
-  // ✅ MELHORADO: Se score muito baixo, tentar inferir da URL
+  // Se score muito baixo, tentar inferir da URL
   if (bestMatch.score === 0 || bestMatch.score < 2) {
     const urlHints: Record<string, string> = {
       'clothing': 'textiles_clothing',
       'shoes': 'textiles_clothing',
       'fashion': 'textiles_clothing',
       'jewelry': 'textiles_clothing',
+      'heels': 'textiles_clothing',
+      'boots': 'textiles_clothing',
+      'sneakers': 'textiles_clothing',
       'electronics': 'electronics',
       'phone': 'electronics',
       'computer': 'electronics',
