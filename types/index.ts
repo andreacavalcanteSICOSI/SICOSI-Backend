@@ -72,28 +72,49 @@ export interface ProductInfo {
   searchResults?: SearchResult[];
 }
 
-export interface SustainabilityCriteria {
-  [key: string]: string | string[];
+// ===== TIPOS CORRIGIDOS PARA alternatives.json =====
+
+// Critério de sustentabilidade individual
+export interface SustainabilityCriterion {
+  weight: number;
+  guidelines: string[];
 }
 
+// Objeto com múltiplos critérios
+export interface SustainabilityCriteria {
+  [key: string]: SustainabilityCriterion;
+}
+
+// Estrutura de uma categoria no alternatives.json
 export interface CategoryData {
   name: string;
-  description: string;
+  keywords: string[];
   sustainability_criteria: SustainabilityCriteria;
   certifications: string[];
-  references?: string[];
+  references: string[];
+  brazilian_brands?: string[];
+  [key: string]: any; // Permite campos adicionais dinâmicos
 }
 
-export interface AlternativesData {
-  metadata: {
-    version: string;
-    last_updated: string;
-    description: string;
+// Metadata do alternatives.json
+export interface AlternativesMetadata {
+  total_categories: number;
+  new_categories_added: string[];
+  coverage: string;
+  standards_referenced: string[];
+  special_focus: {
+    [key: string]: string;
   };
+}
+
+// Estrutura completa do alternatives.json
+export interface AlternativesData {
+  version: string;
+  description: string;
+  lastUpdated: string;
+  source: string;
+  metadata: AlternativesMetadata;
   categories: {
     [key: string]: CategoryData;
   };
 }
-
-// ✅ REMOVIDO: export interface ApiResponse<T = any>
-// Não é usado em nenhum lugar do código
