@@ -1,12 +1,10 @@
-// pages/api/analyze-product.ts - VERSÃO CORRIGIDA
-// Mudanças: Busca mais específica de produtos reais + função extractProductType
-
+// pages/api/analyze-product.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import Groq from 'groq-sdk';
 import alternativesData from '../../data/alternatives.json';
 import webSearchClient from '../../services/web-search-client';
 
-// ===== TIPOS ===== (mantidos iguais)
+// ===== TIPOS =====
 interface ProductInfo {
   productName?: string;
   product_name?: string;
@@ -33,17 +31,14 @@ interface SustainabilityCriterion {
   guidelines: string[];
 }
 
+// ✅ FIX: Tipo simples que corresponde ao JSON real
 interface CategoryData {
   name: string;
   keywords: string[];
   sustainability_criteria: Record<string, SustainabilityCriterion>;
   certifications: string[];
   references: string[];
-  special_notes?: Record<string, string[]>;
-}
-
-interface AlternativesData {
-  categories: Record<string, CategoryData>;
+  brazilian_brands?: string[];
 }
 
 interface OriginalProduct {
@@ -85,11 +80,10 @@ interface AnalysisResponse {
   error?: string;
 }
 
-// ===== NOVA FUNÇÃO: EXTRAIR TIPO DE PRODUTO =====
+// ===== FUNÇÃO: EXTRAIR TIPO DE PRODUTO =====
 function extractProductType(productName: string): string {
   const lowerName = productName.toLowerCase();
   
-  // Padrões comuns de produtos
   const patterns: Record<string, string[]> = {
     'body wash': ['body wash', 'shower gel', 'sabonete líquido'],
     'shampoo': ['shampoo', 'xampu'],
@@ -108,14 +102,12 @@ function extractProductType(productName: string): string {
     'backpack': ['backpack', 'mochila', 'bag'],
   };
   
-  // Procurar correspondência
   for (const [type, keywords] of Object.entries(patterns)) {
     if (keywords.some(kw => lowerName.includes(kw))) {
       return type;
     }
   }
   
-  // Fallback: últimas 2-3 palavras do nome
   const words = productName.split(' ').filter(w => w.length > 2);
   return words.slice(-2).join(' ');
 }
@@ -125,7 +117,6 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<AnalysisResponse>
 ) {
-  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
@@ -169,8 +160,9 @@ export default async function handler(
     const category = await identifyCategory(productInfo);
     console.log('📂 Category identified:', category);
 
-    const typedAlternatives = alternativesData as AlternativesData;
-    const categoryData = typedAlternatives.categories[category];
+    // ✅ FIX: Acessar categories com index signature
+    const categories = alternativesData.categories as Record<string, CategoryData>;
+    const categoryData = categories[category];
 
     if (!categoryData) {
       return res.status(400).json({
@@ -179,9 +171,6 @@ export default async function handler(
       });
     }
 
-    // ============================================================================
-    // BUSCA MELHORADA: Produtos REAIS com filtros rigorosos
-    // ============================================================================
     console.log('🔍 Searching for REAL sustainable product alternatives...');
     
     let realProducts: Array<{title: string, url: string, snippet: string}> = [];
@@ -198,7 +187,6 @@ export default async function handler(
       };
       const countryName = countryNames[userCountry] || 'Brazil';
       
-      // Queries MUITO específicas para e-commerces
       const amazonDomain = userCountry === 'BR' ? 'com.br' : userCountry === 'UK' ? 'co.uk' : 'com';
       
       const searchQueries = [
@@ -222,42 +210,37 @@ export default async function handler(
           if (tavilyResults.success && tavilyResults.results) {
             console.log(`📊 Query returned ${tavilyResults.results.length} results`);
             
-            // Filtros RIGOROSOS para produtos reais
             const filteredResults = tavilyResults.results.filter(r => {
               const url = r.url.toLowerCase();
               const text = `${r.title} ${r.snippet}`.toLowerCase();
               
-              // DEVE ter padrão de URL de produto
               const productURLPatterns = [
                 '/dp/', '/product/', '/p/', '/item/', '/listing/', '/products/', '-p-'
               ];
               const hasProductURL = productURLPatterns.some(pattern => url.includes(pattern));
               
-              // NÃO DEVE ser artigo/blog
               const excludePatterns = [
                 '/blog/', '/article/', '/news/', '/guide/', '/how-to/', '/features/',
                 '/best-', '/top-', '/review', 'wikipedia.org', 'youtube.com'
               ];
               const isExcluded = excludePatterns.some(pattern => url.includes(pattern));
               
-              // DEVE mencionar sustentabilidade
               const sustainableKeywords = [
                 'sustainable', 'eco', 'organic', 'fair trade', 'biodegradable',
                 'recycled', 'natural', 'green', 'sustentável', 'ecológico'
               ];
               const hasSustainableKeyword = sustainableKeywords.some(kw => text.includes(kw));
               
-              // DEVE ser de e-commerce
               const ecommerceDomains = [
                 'amazon', 'etsy', 'ebay', 'walmart', 'target', 'mercado',
-                'shopee', 'magalu', 'packagefree', 'earthhero'
+                'shopee', 'aliexpress', 'magalu', 'americanas'
               ];
               const isEcommerce = ecommerceDomains.some(domain => url.includes(domain));
               
               const isValid = hasProductURL && !isExcluded && hasSustainableKeyword && isEcommerce;
               
               if (isValid) {
-                console.log('✅ Valid product:', r.title?.substring(0, 60) || 'No title');
+                console.log(`✅ Valid product: ${r.title.substring(0, 50)}`);
               }
               
               return isValid;
@@ -281,7 +264,6 @@ export default async function handler(
         if (realProducts.length >= 5) break;
       }
       
-      // Remover duplicados e pegar top 8
       const uniqueProducts = Array.from(
         new Map(realProducts.map(p => [p.url, p])).values()
       ).slice(0, 8);
@@ -294,7 +276,6 @@ export default async function handler(
       console.warn('⚠️ Continuing without Tavily results');
     }
 
-    // Análise com Groq
     const analysis = await analyzeWithGroq(
       productInfo, 
       category, 
@@ -363,7 +344,7 @@ async function translateProductName(productName: string): Promise<string> {
   }
 }
 
-// ===== IDENTIFICAR CATEGORIA ===== (mantido igual)
+// ===== IDENTIFICAR CATEGORIA =====
 async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   const productName = productInfo.productName || productInfo.product_name || '';
   const description = productInfo.description || '';
@@ -372,10 +353,11 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   const translatedName = await translateProductName(productName);
   const text = `${translatedName} ${description} ${selectedText}`.toLowerCase();
 
-  const typedAlternatives = alternativesData as AlternativesData;
+  // ✅ FIX: Acessar categories com index signature
+  const categories = alternativesData.categories as Record<string, CategoryData>;
   let bestMatch = { category: '', score: 0 };
 
-  for (const [categoryKey, categoryData] of Object.entries(typedAlternatives.categories)) {
+  for (const [categoryKey, categoryData] of Object.entries(categories)) {
     const keywords = categoryData.keywords || [];
     let score = 0;
 
@@ -398,7 +380,7 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   return bestMatch.category;
 }
 
-// ===== ANÁLISE COM GROQ ===== (prompt melhorado)
+// ===== ANÁLISE COM GROQ =====
 async function analyzeWithGroq(
   productInfo: ProductInfo, 
   category: string, 

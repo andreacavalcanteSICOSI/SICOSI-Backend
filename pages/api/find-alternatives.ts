@@ -8,7 +8,6 @@ import type {
   ProductAnalysis, 
   Alternative, 
   SearchResult,
-  AlternativesData,
   AlternativesAnalysis
 } from '@/types';
 
@@ -43,8 +42,9 @@ export default async function handler(
       });
     }
 
-    const data = alternativesData as AlternativesData;
-    const categoryData = data.categories[category];
+    // ✅ CORRETO: Acessar category com index signature
+    const categories = alternativesData.categories as Record<string, any>;
+    const categoryData = categories[category];
     
     if (!categoryData) {
       return res.status(400).json({
