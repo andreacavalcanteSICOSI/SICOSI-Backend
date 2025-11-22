@@ -1,7 +1,4 @@
 // pages/api/analyze-product.ts
-// ARQUIVO CORRIGIDO - SICOSI Backend
-// Data: 21/11/2024
-// Correções aplicadas: 1, 2, 3, 4, 5, 6, 7
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import Groq from 'groq-sdk';
@@ -476,7 +473,7 @@ async function translateProductName(name: string): Promise<string> {
   }
 }
 
-// ===== IDENTIFICAR CATEGORIA =====
+// ===== IDENTIFICAR CATEGORIA (CORRIGIDO - SEM FALLBACK) =====
 async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   const name = productInfo.productName || productInfo.product_name || '';
   const desc = productInfo.description || '';
@@ -484,38 +481,72 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   const url = productInfo.pageUrl || productInfo.product_url || '';
   
   const translated = await translateProductName(name);
-  const text = `${translated} ${desc} ${title} ${url}`.toLowerCase();
+  
+  // ✅ Normalizar texto (remover acentos, pontuação, espaços extras)
+  const normalizeText = (str: string) => {
+    return str
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+      .replace(/[^a-z0-9\s]/g, ' ')     // Remove pontuação
+      .replace(/\s+/g, ' ')             // Remove espaços extras
+      .trim();
+  };
+  
+  // Incluir nome original E traduzido para melhor matching
+  const text = normalizeText(`${name} ${translated} ${desc} ${title} ${url}`);
   
   console.log('🔍 [CATEGORY] Text sample:', text.substring(0, 150));
 
   const categories = alternativesData.categories as Record<string, CategoryData>;
   let best = { category: '', score: 0 };
+  const scores: Record<string, number> = {};
 
   for (const [key, data] of Object.entries(categories)) {
     let score = 0;
     
     for (const keyword of data.keywords) {
-      const kw = keyword.toLowerCase();
-      const matches = text.match(new RegExp(kw, 'g'));
+      const kw = normalizeText(keyword);
+      
+      // Usar word boundary para match exato (evita falsos positivos)
+      const pattern = new RegExp(`\\b${kw}\\b`, 'g');
+      const matches = text.match(pattern);
+      
       if (matches) {
         score += matches.length;
+        console.log(`  ✓ [${key}] Matched "${keyword}" ${matches.length}x`);
       }
-      if (translated.toLowerCase().includes(kw)) {
+      
+      // Bonus se keyword está no nome do produto traduzido (mais relevante)
+      const translatedLower = normalizeText(translated);
+      if (translatedLower.includes(kw)) {
         score += 2;
+        console.log(`  ✓✓ [${key}] Keyword "${keyword}" in product name (+2)`);
       }
     }
+
+    scores[key] = score;
 
     if (score > best.score) {
       best = { category: key, score };
     }
   }
 
-  if (best.score === 0) {
-    console.warn('⚠️ [CATEGORY] No match, using textiles_clothing as fallback');
-    return 'textiles_clothing';
+  // Mostrar scores de todas categorias que pontuaram
+  console.log('📊 [CATEGORY] Scores:');
+  for (const [cat, scr] of Object.entries(scores)) {
+    if (scr > 0) {
+      console.log(`  - ${cat}: ${scr}`);
+    }
   }
 
-  console.log(`📊 [CATEGORY] Best: ${best.category} (score: ${best.score})`);
+  // ✅ SEM FALLBACK: Se não identificar, retornar erro
+  if (best.score === 0) {
+    console.error('❌ [CATEGORY] No category matched! Cannot proceed.');
+    throw new Error('Could not identify product category. Please provide more details or check if product name is correct.');
+  }
+
+  console.log(`✅ [CATEGORY] Winner: ${best.category} (score: ${best.score})`);
   return best.category;
 }
 
