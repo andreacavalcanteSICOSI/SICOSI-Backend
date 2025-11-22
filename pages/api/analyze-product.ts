@@ -36,11 +36,48 @@ interface SustainabilityCriterion {
 interface CategoryData {
   name: string;
   keywords: string[];
+  exclusion_keywords: string[];
+  keyword_synonyms: Record<string, string[]>;
   sustainability_criteria: Record<string, SustainabilityCriterion>;
   certifications: string[];
   references: string[];
   brazilian_brands?: string[];
   product_types?: string[];
+}
+
+interface ScoringSource {
+  text: string;
+  weight: number;
+}
+
+interface CategoryScore {
+  category: string;
+  score: number;
+  matches: string[];
+  exclusions: string[];
+  confidence: 'high' | 'medium' | 'low';
+}
+
+interface ScoringConfig {
+  source_weights: {
+    product_name_translated: number;
+    product_name_original: number;
+    page_title: number;
+    description: number;
+    url: number;
+  };
+  validation_thresholds: {
+    minimum_score: number;
+    confidence_ratio: number;
+    exclusion_penalty: number;
+  };
+}
+
+interface TextProcessingConfig {
+  remove_accents: boolean;
+  lowercase: boolean;
+  remove_punctuation: boolean;
+  word_boundary_matching: boolean;
 }
 
 interface AlternativesConfig {
@@ -51,6 +88,8 @@ interface AlternativesConfig {
   common_translations: Record<string, string>;
   incompatible_types: Record<string, string[]>;
   categories: Record<string, CategoryData>;
+  scoring_config: ScoringConfig;
+  text_processing: TextProcessingConfig;
 }
 
 interface OriginalProduct {
@@ -103,6 +142,276 @@ interface AnalysisResponse {
 // Cast seguro para o JSON
 const config = alternativesData as unknown as AlternativesConfig;
 
+// ======= UTILIDADES DE CATEGORIZAÇÃO DINÂMICA =======
+function getTextProcessingConfig(): TextProcessingConfig {
+  return (
+    config.text_processing || {
+      remove_accents: true,
+      lowercase: true,
+      remove_punctuation: true,
+      word_boundary_matching: true
+    }
+  );
+}
+
+function normalizeCategoryText(text: string): string {
+  const settings = getTextProcessingConfig();
+  let result = text || '';
+
+  if (settings.lowercase) {
+    result = result.toLowerCase();
+  }
+
+  if (settings.remove_accents) {
+    result = result.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  if (settings.remove_punctuation) {
+    result = result.replace(/[^a-z0-9\s]/g, ' ');
+  }
+
+  return result.replace(/\s+/g, ' ').trim();
+}
+
+function expandKeywordWithSynonyms(
+  keyword: string,
+  synonymsMap: Record<string, string[]>
+): string[] {
+  const normalizedKeyword = (keyword || '').toLowerCase();
+  const variants = new Set<string>([normalizedKeyword]);
+
+  const synonyms = synonymsMap?.[normalizedKeyword] || [];
+  synonyms.forEach((syn) => variants.add((syn || '').toLowerCase()));
+
+  if (!normalizedKeyword.endsWith('s')) {
+    variants.add(`${normalizedKeyword}s`);
+  }
+  variants.add(normalizedKeyword.replace(/s$/, ''));
+
+  return Array.from(variants).filter(Boolean);
+}
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function countMatches(text: string, keyword: string): number {
+  const settings = getTextProcessingConfig();
+  const safeKeyword = escapeRegex((keyword || '').toLowerCase());
+
+  if (settings.word_boundary_matching) {
+    const pattern = new RegExp(`\\b${safeKeyword}\\b`, 'gi');
+    const matches = text.match(pattern);
+    return matches ? matches.length : 0;
+  }
+
+  return (text.match(new RegExp(safeKeyword, 'gi')) || []).length;
+}
+
+function calculateCategoryScores(sources: ScoringSource[]): CategoryScore[] {
+  const categories = config.categories;
+  const results: CategoryScore[] = [];
+
+  for (const [categoryKey, categoryData] of Object.entries(categories)) {
+    let totalScore = 0;
+    const matches: string[] = [];
+
+    for (const source of sources) {
+      if (!source.text || source.weight === 0) continue;
+
+      const normalizedText = normalizeCategoryText(source.text);
+
+      for (const keyword of categoryData.keywords) {
+        const allVariants = expandKeywordWithSynonyms(keyword, categoryData.keyword_synonyms);
+
+        for (const variant of allVariants) {
+          const matchCount = countMatches(normalizedText, variant);
+
+          if (matchCount > 0) {
+            const points = matchCount * source.weight;
+            totalScore += points;
+            matches.push(`${variant} (${matchCount}x, +${points}pts)`);
+          }
+        }
+      }
+    }
+
+    results.push({
+      category: categoryKey,
+      score: totalScore,
+      matches,
+      exclusions: [],
+      confidence: 'medium'
+    });
+  }
+
+  return results;
+}
+
+function applyExclusionRules(
+  scores: CategoryScore[],
+  primaryText: string
+): CategoryScore[] {
+  const normalizedPrimary = normalizeCategoryText(primaryText);
+  const categories = config.categories;
+  const penalty =
+    config.scoring_config?.validation_thresholds?.exclusion_penalty ?? -999;
+
+  return scores.map((scoreData) => {
+    const categoryData = categories[scoreData.category];
+    const exclusionKeywords = categoryData.exclusion_keywords || [];
+    const exclusionsFound: string[] = [];
+
+    for (const exclusionKw of exclusionKeywords) {
+      const allVariants = expandKeywordWithSynonyms(
+        exclusionKw,
+        categoryData.keyword_synonyms
+      );
+
+      for (const variant of allVariants) {
+        if (countMatches(normalizedPrimary, variant) > 0) {
+          exclusionsFound.push(variant);
+        }
+      }
+    }
+
+    if (exclusionsFound.length > 0) {
+      return {
+        ...scoreData,
+        score: scoreData.score + penalty,
+        exclusions: exclusionsFound
+      };
+    }
+
+    return scoreData;
+  });
+}
+
+function selectWinner(scores: CategoryScore[]): CategoryScore | null {
+  const thresholds = config.scoring_config.validation_thresholds;
+  const sorted = [...scores].sort((a, b) => b.score - a.score);
+  const first = sorted[0];
+  const second = sorted[1];
+
+  if (!first || first.score < thresholds.minimum_score) {
+    console.log(
+      `❌ [CATEGORY] Winner score too low: ${first?.score ?? 0} < ${thresholds.minimum_score}`
+    );
+    return null;
+  }
+
+  const ratio = second && second.score > 0 ? first.score / second.score : Infinity;
+
+  if (ratio < thresholds.confidence_ratio) {
+    first.confidence = 'low';
+    console.log(
+      `⚠️ [CATEGORY] Low confidence: ratio ${ratio.toFixed(2)} < ${thresholds.confidence_ratio}`
+    );
+  } else if (ratio >= thresholds.confidence_ratio * 1.5) {
+    first.confidence = 'high';
+  } else {
+    first.confidence = 'medium';
+  }
+
+  if (first.exclusions.length > 0) {
+    console.log(`❌ [CATEGORY] Exclusions found for ${first.category}:`, first.exclusions);
+    return null;
+  }
+
+  return first;
+}
+
+async function classifyWithAI(
+  name: string,
+  translated: string,
+  title: string
+): Promise<string> {
+  const groqApiKey = process.env.GROQ_API_KEY;
+  if (!groqApiKey) {
+    throw new Error('Cannot classify: low confidence and no AI available');
+  }
+
+  const categories = config.categories;
+  const categoryList = Object.entries(categories)
+    .map(
+      ([key, data]) =>
+        `- ${key}: ${data.name} (keywords: ${data.keywords.slice(0, 5).join(', ')})`
+    )
+    .join('\n');
+
+  const prompt = `Classify this product into ONE category:
+
+PRODUCT: ${name}
+TRANSLATED: ${translated}
+PAGE TITLE: ${title}
+
+AVAILABLE CATEGORIES:
+${categoryList}
+
+Return ONLY the category key (e.g., "fashion_apparel").
+Category:`;
+
+  try {
+    const groq = new Groq({ apiKey: groqApiKey });
+    const completion = await groq.chat.completions.create({
+      messages: [
+        { role: 'system', content: 'Return only the category key, nothing else.' },
+        { role: 'user', content: prompt }
+      ],
+      model: 'llama-3.3-70b-versatile',
+      temperature: 0.1,
+      max_tokens: 20
+    });
+
+    const rawCategory = completion.choices[0]?.message?.content?.trim();
+    const category = rawCategory ? rawCategory.toLowerCase() : '';
+
+    if (category && categories[category]) {
+      console.log(`🤖 [CATEGORY] AI classified as: ${category}`);
+      return category;
+    }
+
+    throw new Error(`AI returned invalid category: ${category}`);
+  } catch (error) {
+    console.error('❌ [CATEGORY] AI classification failed:', error);
+    throw new Error('Could not identify product category');
+  }
+}
+
+function logCategorizationResult(
+  allScores: CategoryScore[],
+  winner: CategoryScore | null
+): void {
+  console.log('🔍 [CATEGORY] Detailed Analysis:');
+  console.log('━'.repeat(60));
+
+  const top3 = [...allScores]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+
+  for (const score of top3) {
+    console.log(`\n📊 ${score.category}: ${score.score} points`);
+    if (score.matches.length > 0) {
+      console.log(`   ✓ Matches: ${score.matches.join(', ')}`);
+    }
+    if (score.exclusions.length > 0) {
+      console.log(`   ✗ Exclusions: ${score.exclusions.join(', ')}`);
+    }
+  }
+
+  console.log('\n' + '━'.repeat(60));
+
+  if (winner) {
+    console.log(`✅ [CATEGORY] Winner: ${winner.category}`);
+    console.log(`   Confidence: ${winner.confidence}`);
+    console.log(`   Score: ${winner.score}`);
+  } else {
+    console.log('❌ [CATEGORY] No valid winner found');
+  }
+
+  console.log('━'.repeat(60));
+}
+
 // ===== DETECTAR TIPO DE PRODUTO COM IA (CORRIGIDO) =====
 async function detectProductType(
   productName: string, 
@@ -112,10 +421,11 @@ async function detectProductType(
   
   // ✅ CORREÇÃO 3: FALLBACK INTELIGENTE com dicionário dinâmico do JSON
   const categories = config.categories;
-  
+
   // Buscar tipo conhecido no nome do produto
-  const lowerName = productName.toLowerCase();
-  const lowerTitle = pageTitle.toLowerCase();
+  const safeProductName = productName || '';
+  const lowerName = safeProductName.toLowerCase();
+  const lowerTitle = (pageTitle || '').toLowerCase();
   
   for (const [, data] of Object.entries(categories)) {
     if (data.product_types) {
@@ -134,7 +444,7 @@ async function detectProductType(
   
   // Se não achou com keywords e não tem API key, usar fallback básico
   if (!groqApiKey) {
-    const words = productName.split(/\s+/).filter(w => w.length > 2);
+    const words = safeProductName.split(/\s+/).filter(w => w.length > 2);
     const fallback = words.slice(-2).join(' ');
     console.log(`🏷️ Type (basic fallback): "${fallback}"`);
     return fallback;
@@ -164,7 +474,8 @@ Product type:`;
       max_tokens: 20
     });
 
-    const type = completion.choices[0]?.message?.content?.trim().toLowerCase() || '';
+    const rawType = completion.choices[0]?.message?.content?.trim();
+    const type = rawType ? rawType.toLowerCase() : '';
     
     if (type && type.length > 0 && type.length < 50) {
       console.log(`🏷️ Type (AI): "${type}"`);
@@ -176,7 +487,7 @@ Product type:`;
   } catch (error) {
     console.error('⚠️ Type detection error:', error);
     // Fallback: últimas palavras do nome
-    const words = productName.split(/\s+/).filter(w => w.length > 2);
+    const words = safeProductName.split(/\s+/).filter(w => w.length > 2);
     const fallback = words.slice(-2).join(' ');
     console.log(`🏷️ Type (error fallback): "${fallback}"`);
     return fallback;
@@ -349,9 +660,10 @@ async function searchRealProducts(
     }
 
     // ✅ CORREÇÃO 5: FILTROS MAIS FLEXÍVEIS
-    const validProducts = results.results.filter(r => {
-      const url = r.url.toLowerCase();
-      const text = `${r.title} ${r.snippet}`.toLowerCase();
+    const rawResults = (results.results || []).filter(Boolean);
+    const validProducts = rawResults.filter(r => {
+      const url = (r.url || '').toLowerCase();
+      const text = `${r.title || ''} ${r.snippet || ''}`.toLowerCase();
       
       // Padrão de produto (mais flexível)
       const productPatterns = [
@@ -369,16 +681,17 @@ async function searchRealProducts(
       
       // Deve ter keyword sustentável (mais flexível)
       const sustainKeywords = [
-        'sustain', 'eco', 'organic', 'recycle', 'natural', 
+        'sustain', 'eco', 'organic', 'recycle', 'natural',
         'fair trade', 'ethical', 'green'
       ];
       const isSustainable = sustainKeywords.some(kw => text.includes(kw)) ||
-                           categoryData.certifications.some(cert => 
-                             text.includes(cert.toLowerCase())
-                           );
+                           categoryData.certifications.some(cert => {
+                             const certText = (cert || '').toLowerCase();
+                             return text.includes(certText);
+                           });
       
       // Deve ter o tipo de produto (normalizado para plural/singular)
-      const typeWords = productType.toLowerCase().split(/\s+/);
+      const typeWords = (productType || '').toLowerCase().split(/\s+/);
       const hasType = typeWords.some(word => {
         const singular = word.replace(/s$/, '');
         const plural = word + (word.endsWith('s') ? '' : 's');
@@ -399,9 +712,9 @@ async function searchRealProducts(
     ).slice(0, 15);
 
     return unique.map(r => ({
-      title: r.title,
-      url: r.url,
-      snippet: r.snippet
+      title: r.title || 'Untitled Product',
+      url: r.url || '',
+      snippet: r.snippet || 'No description available'
     }));
 
   } catch (error) {
@@ -412,6 +725,10 @@ async function searchRealProducts(
 
 // ===== TRADUZIR (CORRIGIDO) =====
 async function translateProductName(name: string): Promise<string> {
+  if (!name || name.trim().length === 0) {
+    console.log('⚠️ [TRANSLATE] Empty product name provided');
+    return '';
+  }
   // Se já está em inglês, retornar
   if (/^[a-zA-Z0-9\s\-_]+$/.test(name)) {
     return name;
@@ -427,13 +744,14 @@ async function translateProductName(name: string): Promise<string> {
   };
   
   // Tentar tradução básica primeiro
-  const words = name.toLowerCase().split(/\s+/);
+  const normalizedName = name || '';
+  const words = normalizedName.toLowerCase().split(/\s+/);
   const basicTranslation = words
     .map(word => basicTranslations[word] || word)
     .join(' ');
   
   // Se conseguiu traduzir algo, usar
-  if (basicTranslation !== name.toLowerCase()) {
+  if (basicTranslation !== normalizedName.toLowerCase()) {
     console.log(`🌐 [TRANSLATE] Basic: "${name}" → "${basicTranslation}"`);
     return basicTranslation;
   }
@@ -471,81 +789,44 @@ async function translateProductName(name: string): Promise<string> {
   }
 }
 
-// ===== IDENTIFICAR CATEGORIA (CORRIGIDO - SEM FALLBACK) =====
+// ===== IDENTIFICAR CATEGORIA (REFATORADA - CONFIG-DRIVEN) =====
 async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   const name = productInfo.productName || productInfo.product_name || '';
   const desc = productInfo.description || '';
   const title = productInfo.pageTitle || '';
   const url = productInfo.pageUrl || productInfo.product_url || '';
-  
+
   const translated = await translateProductName(name);
-  
-  // ✅ Normalizar texto (remover acentos, pontuação, espaços extras)
-  const normalizeText = (str: string) => {
-    return str
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '') // Remove acentos
-      .replace(/[^a-z0-9\s]/g, ' ')     // Remove pontuação
-      .replace(/\s+/g, ' ')             // Remove espaços extras
-      .trim();
-  };
-  
-  // Incluir nome original E traduzido para melhor matching
-  const text = normalizeText(`${name} ${translated} ${desc} ${title} ${url}`);
-  
-  console.log('🔍 [CATEGORY] Text sample:', text.substring(0, 150));
+  if (!name && !desc && !title && !url) {
+    console.error('❌ [CATEGORY] No product information provided');
+    throw new Error(
+      'Product information is required. Please provide at least a product name, description, title, or URL.'
+    );
+  }
+  const weights = config.scoring_config.source_weights;
 
-  const categories = config.categories;
-  let best = { category: '', score: 0 };
-  const scores: Record<string, number> = {};
+  const textSample = [translated, name, title, desc].filter(Boolean).join(' | ');
+  console.log('🔍 [CATEGORY] Text sample:', textSample ? textSample.substring(0, 150) : '(empty)');
 
-  for (const [key, data] of Object.entries(categories)) {
-    let score = 0;
-    
-    for (const keyword of data.keywords) {
-      const kw = normalizeText(keyword);
-      
-      // Usar word boundary para match exato (evita falsos positivos)
-      const pattern = new RegExp(`\\b${kw}\\b`, 'g');
-      const matches = text.match(pattern);
-      
-      if (matches) {
-        score += matches.length;
-        console.log(`  ✓ [${key}] Matched "${keyword}" ${matches.length}x`);
-      }
-      
-      // Bonus se keyword está no nome do produto traduzido (mais relevante)
-      const translatedLower = normalizeText(translated);
-      if (translatedLower.includes(kw)) {
-        score += 2;
-        console.log(`  ✓✓ [${key}] Keyword "${keyword}" in product name (+2)`);
-      }
-    }
+  const sources: ScoringSource[] = [
+    { text: translated, weight: weights.product_name_translated },
+    { text: name, weight: weights.product_name_original },
+    { text: title, weight: weights.page_title },
+    { text: desc, weight: weights.description }
+  ];
 
-    scores[key] = score;
+  const categoryScores = calculateCategoryScores(sources);
+  const filteredScores = applyExclusionRules(categoryScores, translated);
+  const winner = selectWinner(filteredScores);
 
-    if (score > best.score) {
-      best = { category: key, score };
-    }
+  logCategorizationResult(filteredScores, winner);
+
+  if (!winner || winner.confidence === 'low') {
+    console.log('⚠️ [CATEGORY] Low confidence, using AI fallback');
+    return await classifyWithAI(name, translated, title);
   }
 
-  // Mostrar scores de todas categorias que pontuaram
-  console.log('📊 [CATEGORY] Scores:');
-  for (const [cat, scr] of Object.entries(scores)) {
-    if (scr > 0) {
-      console.log(`  - ${cat}: ${scr}`);
-    }
-  }
-
-  // ✅ SEM FALLBACK: Se não identificar, retornar erro
-  if (best.score === 0) {
-    console.error('❌ [CATEGORY] No category matched! Cannot proceed.');
-    throw new Error('Could not identify product category. Please provide more details or check if product name is correct.');
-  }
-
-  console.log(`✅ [CATEGORY] Winner: ${best.category} (score: ${best.score})`);
-  return best.category;
+  return winner.category;
 }
 
 // ===== ANALISAR COM GROQ (CORRIGIDO) =====
@@ -570,11 +851,19 @@ async function analyzeWithGroq(
     .map(([key, val]) => `${key} (weight ${val.weight}): ${val.guidelines.join('; ')}`)
     .join('\n');
 
+  const validProducts = (realProducts || [])
+    .filter((p) => p && typeof p === 'object' && p.title && p.url)
+    .map((p) => ({
+      title: p.title || 'Untitled',
+      url: p.url || 'N/A',
+      snippet: p.snippet || 'No description available'
+    }));
+
   // Construir lista de produtos
-  const productsText = realProducts.length > 0
-    ? `\n\nREAL PRODUCTS FOUND (${realProducts.length} total):\n${
-        realProducts.map((p, i) => 
-          `${i + 1}. ${p.title}\n   URL: ${p.url}\n   ${p.snippet.substring(0, 100)}...\n`
+  const productsText = validProducts.length > 0
+    ? `\n\nREAL PRODUCTS FOUND (${validProducts.length} total):\n${
+        validProducts.map((p, i) =>
+          `${i + 1}. ${p.title}\n   URL: ${p.url}\n   ${(p.snippet || 'No description available').substring(0, 100)}...\n`
         ).join('\n')
       }`
     : '\n\nNO PRODUCTS FOUND - Suggest well-known sustainable brands.';
@@ -591,7 +880,7 @@ ${criteria}
 CERTIFICATIONS: ${categoryData.certifications.join(', ')}
 ${productsText}
 
-${realProducts.length > 0 ? `
+${validProducts.length > 0 ? `
 CRITICAL RULES:
 1. Use ONLY products from list above
 2. Each alternative MUST be same type as "${productType}"
@@ -659,7 +948,7 @@ RETURN JSON:
 
     // ✅ CORREÇÃO 2: VALIDAÇÃO PÓS-IA COM REGEX
     if (result.alternatives) {
-      const typeLower = productType.toLowerCase();
+      const typeLower = (productType || '').toLowerCase();
       
       // ✅ Usar REGEX com word boundaries ao invés de includes()
       const incompatibleTypes = config.incompatible_types;
@@ -670,7 +959,12 @@ RETURN JSON:
       };
       
       result.alternatives = result.alternatives.filter(alt => {
-        const altName = alt.name.toLowerCase();
+        if (!alt || !alt.name) {
+          console.log('❌ [VALIDATION] Rejected (missing name)');
+          return false;
+        }
+
+        const altName = (alt.name || '').toLowerCase();
         
         // Rejeitar livros/guias
         if (/\b(book|guide|article|tips|living)\b/.test(altName)) {
@@ -706,3 +1000,5 @@ RETURN JSON:
     throw error;
   }
 }
+
+export { identifyCategory };
