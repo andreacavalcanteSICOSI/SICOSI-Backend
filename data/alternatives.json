@@ -1988,64 +1988,6 @@
         "Co-working spaces",
         "Product-as-a-service models"
       ]
-    },
-    "general": {
-      "name": "General Products",
-      "keywords": [
-        "product",
-        "item",
-        "goods",
-        "thing",
-        "object"
-      ],
-      "sustainability_criteria": {
-        "durability": {
-          "weight": 0.3,
-          "guidelines": [
-            "Long product lifespan",
-            "Quality construction",
-            "Repairable design",
-            "Resistant to wear and tear"
-          ]
-        },
-        "materials": {
-          "weight": 0.3,
-          "guidelines": [
-            "Sustainable or recycled materials",
-            "Non-toxic materials",
-            "Minimal environmental impact",
-            "Responsibly sourced"
-          ]
-        },
-        "production": {
-          "weight": 0.2,
-          "guidelines": [
-            "Ethical production practices",
-            "Low environmental impact manufacturing",
-            "Fair labor practices",
-            "Energy-efficient production"
-          ]
-        },
-        "end_of_life": {
-          "weight": 0.2,
-          "guidelines": [
-            "Recyclable or biodegradable",
-            "Take-back programs",
-            "Minimal waste generation",
-            "Circular economy compatible"
-          ]
-        }
-      },
-      "certifications": [
-        "ISO 14001",
-        "Fair Trade",
-        "B Corp",
-        "Cradle to Cradle"
-      ],
-      "references": [
-        "ISO 14001",
-        "ISO 26000"
-      ]
     }
   },
   "general_sustainability_principles": {
