@@ -40,6 +40,17 @@ interface CategoryData {
   certifications: string[];
   references: string[];
   brazilian_brands?: string[];
+  product_types?: string[];
+}
+
+interface AlternativesConfig {
+  version: string;
+  description: string;
+  lastUpdated: string;
+  source: string;
+  common_translations: Record<string, string>;
+  incompatible_types: Record<string, string[]>;
+  categories: Record<string, CategoryData>;
 }
 
 interface OriginalProduct {
@@ -89,6 +100,9 @@ interface AnalysisResponse {
   error?: string;
 }
 
+// Cast seguro para o JSON
+const config = alternativesData as unknown as AlternativesConfig;
+
 // ===== DETECTAR TIPO DE PRODUTO COM IA (CORRIGIDO) =====
 async function detectProductType(
   productName: string, 
@@ -96,26 +110,22 @@ async function detectProductType(
   categoryName: string = ''
 ): Promise<string> {
   
-  // ✅ CORREÇÃO 3: FALLBACK INTELIGENTE com dicionário de tipos conhecidos
-  const knownTypes: Record<string, string[]> = {
-    'footwear': ['heel', 'shoe', 'boot', 'sneaker', 'sandal', 'flat', 'slipper', 'pump', 'loafer'],
-    'haircare': ['shampoo', 'conditioner', 'hair oil', 'hair mask', 'hair gel', 'hair spray'],
-    'skincare': ['cream', 'lotion', 'serum', 'cleanser', 'toner', 'moisturizer'],
-    'clothing': ['shirt', 'pant', 'jacket', 'dress', 'skirt', 'coat', 'sweater', 'hoodie'],
-    'electronics': ['laptop', 'phone', 'tablet', 'monitor', 'keyboard', 'mouse', 'headphone']
-  };
+  // ✅ CORREÇÃO 3: FALLBACK INTELIGENTE com dicionário dinâmico do JSON
+  const categories = config.categories;
   
   // Buscar tipo conhecido no nome do produto
   const lowerName = productName.toLowerCase();
   const lowerTitle = pageTitle.toLowerCase();
   
-  for (const [, types] of Object.entries(knownTypes)) {
-    for (const type of types) {
-      // Usar regex com word boundaries
-      const pattern = new RegExp(`\\b${type}s?\\b`, 'i');
-      if (pattern.test(lowerName) || pattern.test(lowerTitle)) {
-        console.log(`🏷️ Type detected (keyword): "${type}"`);
-        return type;
+  for (const [, data] of Object.entries(categories)) {
+    if (data.product_types) {
+      for (const type of data.product_types) {
+        // Usar regex com word boundaries
+        const pattern = new RegExp(`\\b${type}s?\\b`, 'i');
+        if (pattern.test(lowerName) || pattern.test(lowerTitle)) {
+          console.log(`🏷️ Type detected (keyword from json): "${type}"`);
+          return type;
+        }
       }
     }
   }
@@ -215,7 +225,7 @@ export default async function handler(
     const category = await identifyCategory(productInfo);
     console.log('📂 [CATEGORY] Identified:', category);
 
-    const categories = alternativesData.categories as Record<string, CategoryData>;
+    const categories = config.categories;
     const categoryData = categories[category];
 
     if (!categoryData) {
@@ -407,25 +417,13 @@ async function translateProductName(name: string): Promise<string> {
     return name;
   }
 
-  // ✅ CORREÇÃO 6: DICIONÁRIO BÁSICO DE TRADUÇÃO (fallback)
-  const basicTranslations: Record<string, string> = {
-    // Calçados
+  // ✅ CORREÇÃO 6: DICIONÁRIO BÁSICO DE TRADUÇÃO (dinâmico do JSON)
+  const commonTranslations = config.common_translations;
+  const basicTranslations: Record<string, string> = commonTranslations || {
+    // Fallback caso o JSON falhe
     'sapato': 'shoe', 'sapatos': 'shoes',
     'salto': 'heel', 'saltos': 'heels',
-    'tênis': 'sneaker', 'tenis': 'sneaker',
-    'bota': 'boot', 'botas': 'boots',
-    'sandália': 'sandal', 'sandalia': 'sandal',
-    // Cuidados pessoais
-    'shampoo': 'shampoo', 'condicionador': 'conditioner',
-    'sabonete': 'soap', 'creme': 'cream',
-    // Roupas
-    'camisa': 'shirt', 'calça': 'pants', 'calca': 'pants',
-    'jaqueta': 'jacket', 'casaco': 'coat',
-    // Cores
-    'preto': 'black', 'branco': 'white',
-    'vermelho': 'red', 'azul': 'blue', 'verde': 'green',
-    // Outros
-    'de': 'of', 'para': 'for', 'com': 'with'
+    'tênis': 'sneaker', 'tenis': 'sneaker'
   };
   
   // Tentar tradução básica primeiro
@@ -498,7 +496,7 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   
   console.log('🔍 [CATEGORY] Text sample:', text.substring(0, 150));
 
-  const categories = alternativesData.categories as Record<string, CategoryData>;
+  const categories = config.categories;
   let best = { category: '', score: 0 };
   const scores: Record<string, number> = {};
 
@@ -664,17 +662,11 @@ RETURN JSON:
       const typeLower = productType.toLowerCase();
       
       // ✅ Usar REGEX com word boundaries ao invés de includes()
-      const wrongTypes: Record<string, string[]> = {
-        'heels': ['\\bsneakers?\\b', '\\bboots?\\b', '\\bsandals?\\b', '\\bflats?\\b', '\\bloafers?\\b'],
-        'sneakers': ['\\bheels?\\b', '\\bboots?\\b', '\\bsandals?\\b', '\\bdress\\s+shoes?\\b', '\\bpumps?\\b'],
-        'boots': ['\\bheels?\\b', '\\bsneakers?\\b', '\\bsandals?\\b', '\\bflats?\\b'],
-        'sandals': ['\\bheels?\\b', '\\bboots?\\b', '\\bsneakers?\\b', '\\bflats?\\b'],
-        'flats': ['\\bheels?\\b', '\\bboots?\\b', '\\bsneakers?\\b', '\\bsandals?\\b'],
-        'shampoo': ['\\bconditioners?\\b', '\\bsoaps?\\b', '\\blotions?\\b', '\\bgels?\\b'],
-        'conditioner': ['\\bshampoos?\\b', '\\bsoaps?\\b', '\\blotions?\\b'],
-        'jacket': ['\\bpants?\\b', '\\bshirts?\\b', '\\bshoes?\\b', '\\bskirts?\\b'],
-        'laptop': ['\\bphones?\\b', '\\btablets?\\b', '\\bmonitors?\\b', '\\bkeyboards?\\b'],
-        'phone': ['\\blaptops?\\b', '\\btablets?\\b', '\\bwatches?\\b', '\\bcomputers?\\b']
+      const incompatibleTypes = config.incompatible_types;
+      const wrongTypes: Record<string, string[]> = incompatibleTypes || {
+        'heels': ['sneaker', 'boot', 'sandal', 'flat', 'loafer'],
+        'sneakers': ['heel', 'boot', 'sandal', 'dress shoe', 'pump'],
+        'boots': ['heel', 'sneaker', 'sandal', 'flat', 'pump']
       };
       
       result.alternatives = result.alternatives.filter(alt => {
@@ -692,10 +684,9 @@ RETURN JSON:
           return false;
         }
         
-        // ✅ Rejeitar tipo diferente usando REGEX
-        const wrongTypePatterns = wrongTypes[typeLower]?.map(pattern => 
-          new RegExp(pattern, 'i')
-        ) || [];
+        // ✅ Rejeitar tipo diferente usando REGEX gerado dinamicamente
+        const wrongList = wrongTypes[typeLower] || [];
+        const wrongTypePatterns = wrongList.map(t => new RegExp(`\\b${t}s?\\b`, 'i'));
         
         if (wrongTypePatterns.some(pattern => pattern.test(altName))) {
           console.log(`❌ [VALIDATION] Rejected (wrong type): ${alt.name} (expected: ${productType})`);

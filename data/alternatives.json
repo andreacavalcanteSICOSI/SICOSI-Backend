@@ -1,7 +1,7 @@
 {
   "version": "4.0",
   "description": "Comprehensive sustainability guidelines for product evaluation across all categories - SICOSI System - Brazilian Market Focus",
-  "lastUpdated": "2025-11-07",
+  "lastUpdated": "2025-11-22",
   "source": "Based on ISO standards, EU ESPR, EMBRAPA guidelines, Brazilian certifications, and global sustainability standards",
   "categories": {
     "electronics": {
@@ -95,6 +95,19 @@
       "brazilian_brands": [
         "Positivo (notebooks)",
         "Multilaser"
+      ],
+      "product_types": [
+        "laptop",
+        "smartphone",
+        "tablet",
+        "monitor",
+        "keyboard",
+        "mouse",
+        "headphone",
+        "printer",
+        "scanner",
+        "camera",
+        "smartwatch"
       ]
     },
     "textiles_clothing": {
@@ -193,6 +206,25 @@
         "Malwee",
         "Hering Sustentavel",
         "Insecta Shoes"
+      ],
+      "product_types": [
+        "shirt",
+        "pants",
+        "jacket",
+        "dress",
+        "skirt",
+        "coat",
+        "sweater",
+        "hoodie",
+        "heel",
+        "shoe",
+        "boot",
+        "sneaker",
+        "sandal",
+        "flat",
+        "slipper",
+        "pump",
+        "loafer"
       ]
     },
     "food_agriculture": {
@@ -566,6 +598,26 @@
         "Surya Brasil",
         "Cativa Natureza",
         "Amo Ser Natural"
+      ],
+      "product_types": [
+        "shampoo",
+        "conditioner",
+        "hair oil",
+        "hair mask",
+        "hair gel",
+        "hair spray",
+        "cream",
+        "lotion",
+        "serum",
+        "cleanser",
+        "toner",
+        "moisturizer",
+        "soap",
+        "deodorant",
+        "toothpaste",
+        "makeup",
+        "lipstick",
+        "mascara"
       ]
     },
     "toys_games": {
@@ -2120,5 +2172,113 @@
       "water_conservation": "Critical for Brazilian water scarcity regions",
       "circular_economy": "Sharing economy and repair services integrated"
     }
+  },
+  "common_translations": {
+    "sapato": "shoe",
+    "sapatos": "shoes",
+    "salto": "heel",
+    "saltos": "heels",
+    "tênis": "sneaker",
+    "tenis": "sneaker",
+    "bota": "boot",
+    "botas": "boots",
+    "sandália": "sandal",
+    "sandalia": "sandal",
+    "chinelo": "slipper",
+    "rasteirinha": "flat",
+    "shampoo": "shampoo",
+    "condicionador": "conditioner",
+    "sabonete": "soap",
+    "creme": "cream",
+    "hidratante": "moisturizer",
+    "protetor solar": "sunscreen",
+    "camisa": "shirt",
+    "calça": "pants",
+    "calca": "pants",
+    "jaqueta": "jacket",
+    "casaco": "coat",
+    "vestido": "dress",
+    "saia": "skirt",
+    "blusa": "blouse",
+    "preto": "black",
+    "branco": "white",
+    "vermelho": "red",
+    "azul": "blue",
+    "verde": "green",
+    "de": "of",
+    "para": "for",
+    "com": "with"
+  },
+  "incompatible_types": {
+    "heels": [
+      "sneaker",
+      "boot",
+      "sandal",
+      "flat",
+      "loafer",
+      "running shoe"
+    ],
+    "sneakers": [
+      "heel",
+      "boot",
+      "sandal",
+      "dress shoe",
+      "pump",
+      "stiletto"
+    ],
+    "boots": [
+      "heel",
+      "sneaker",
+      "sandal",
+      "flat",
+      "pump"
+    ],
+    "sandals": [
+      "heel",
+      "boot",
+      "sneaker",
+      "flat",
+      "closed shoe"
+    ],
+    "flats": [
+      "heel",
+      "boot",
+      "sneaker",
+      "sandal"
+    ],
+    "shampoo": [
+      "conditioner",
+      "soap",
+      "lotion",
+      "gel",
+      "oil"
+    ],
+    "conditioner": [
+      "shampoo",
+      "soap",
+      "lotion",
+      "body wash"
+    ],
+    "jacket": [
+      "pants",
+      "shirt",
+      "shoe",
+      "skirt",
+      "underwear"
+    ],
+    "laptop": [
+      "phone",
+      "tablet",
+      "monitor",
+      "keyboard",
+      "accessory"
+    ],
+    "phone": [
+      "laptop",
+      "tablet",
+      "watch",
+      "computer",
+      "tv"
+    ]
   }
 }
