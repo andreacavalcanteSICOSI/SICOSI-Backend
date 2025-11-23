@@ -142,6 +142,14 @@ interface AnalysisResponse {
 // Cast seguro para o JSON
 const config = alternativesData as unknown as AlternativesConfig;
 
+const VALID_CATEGORIES: Record<string, true> = Object.keys(config.categories).reduce(
+  (map, key) => {
+    map[key] = true;
+    return map;
+  },
+  {} as Record<string, true>
+);
+
 // ======= UTILIDADES DE CATEGORIZAÇÃO DINÂMICA =======
 function getTextProcessingConfig(): TextProcessingConfig {
   return (
@@ -453,16 +461,25 @@ async function detectProductType(
   try {
     const groq = new Groq({ apiKey: groqApiKey });
     
-    const prompt = `Extract the specific product type from this information:
+    const prompt = `Extract the SPECIFIC and DETAILED product type from: "${productName}".
 
-Product name: ${productName}
-Page title: ${pageTitle || 'N/A'}
-Category: ${categoryName}
+CRITICAL INSTRUCTIONS:
+- Be EXTREMELY SPECIFIC, not generic
+- Include the product's primary function/purpose
+- For software, specify what kind of software (photo editing, video editing, office, etc.)
+- For electronics, specify the device type (smartphone, laptop, tablet, etc.)
+- For clothing, specify the item type (sneakers, jacket, t-shirt, etc.)
 
-Return ONLY the product type in 1-2 words (e.g., "heels", "shampoo", "laptop").
-Be specific: if it's heels, say "heels" not "shoes". If it's shampoo, say "shampoo" not "personal care".
+EXAMPLES:
+- "Adobe Photoshop 2024" → "photo editing software"
+- "Microsoft Office 365" → "office productivity software"
+- "iPhone 15 Pro" → "smartphone"
+- "Nike Air Max" → "athletic sneakers"
+- "IKEA POÄNG Chair" → "armchair furniture"
+- "Pantene Shampoo" → "hair care shampoo"
+- "Tesla Model 3" → "electric sedan vehicle"
 
-Product type:`;
+Return ONLY the specific product type in English, nothing else.`;
 
     const completion = await groq.chat.completions.create({
       messages: [
@@ -556,12 +573,19 @@ export default async function handler(
     });
     
     const realProducts = await searchRealProducts(
+      productName,
       productType,
       categoryData,
+      category,
       userCountry
     );
 
     console.log(`✅ [SEARCH] Found ${realProducts.length} products`);
+
+    console.log('📦 Product Name:', productName);
+    console.log('🏷️ Detected Type:', productType);
+    console.log('📁 Category:', categoryData.name);
+    console.log('🔍 Search Results Count:', realProducts.length);
 
     // 3. ANALISAR COM GROQ
     const analysis = await analyzeWithGroq(
@@ -575,10 +599,13 @@ export default async function handler(
     console.log('🤖 [GROQ] Analysis complete:', {
       originalScore: analysis.originalProduct.sustainability_score,
       alternativesCount: analysis.alternatives.length,
-      averageScore: analysis.alternatives.length > 0 
+      averageScore: analysis.alternatives.length > 0
         ? Math.round(analysis.alternatives.reduce((sum, a) => sum + a.sustainability_score, 0) / analysis.alternatives.length)
         : 0
     });
+
+    console.log('🎯 Final Score:', analysis.originalProduct.sustainability_score);
+    console.log('💡 Alternatives:', analysis.alternatives);
 
     // ✅ CORREÇÃO 1: ESTRUTURA DE RESPOSTA COMPLETA
     const response: AnalysisResponse = {
@@ -616,8 +643,10 @@ export default async function handler(
 
 // ===== BUSCAR PRODUTOS REAIS (CORRIGIDO) =====
 async function searchRealProducts(
+  productName: string,
   productType: string,
   categoryData: CategoryData,
+  category: string,
   userCountry: string
 ): Promise<Array<{title: string, url: string, snippet: string}>> {
   
@@ -626,14 +655,20 @@ async function searchRealProducts(
     'CA': 'Canada', 'AU': 'Australia', 'DE': 'Germany',
     'FR': 'France', 'ES': 'Spain', 'IT': 'Italy'
   };
-  const countryName = countryNames[userCountry] || 'Brazil';
   
-  // ✅ CORREÇÃO 4: QUERY SIMPLIFICADA com fallback
-  const topCert = categoryData.certifications[0] || 'eco-friendly';
-  
-  // Query inicial (específica)
-  let query = `sustainable ${productType} ${topCert} buy online`;
-  console.log('🔎 [SEARCH] Query (specific):', query);
+  // Construir query mais específica baseada na categoria
+  let query: string;
+
+  if (category === 'digital_products_software' || category === 'cloud_services') {
+    // Para software, incluir "alternative to" + nome do produto principal
+    const mainProduct = (productName || '').split(' ')[0];
+    query = `sustainable ${productType} alternative to ${mainProduct} eco-friendly`;
+  } else {
+    // Para produtos físicos, manter abordagem atual melhorada
+    query = `sustainable ${productType} eco-friendly certified brands buy`;
+  }
+
+  console.log(`🔍 Web Search Query: ${query}`);
 
   try {
     let results = await webSearchClient.search(query, {
@@ -796,6 +831,29 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   const title = productInfo.pageTitle || '';
   const url = productInfo.pageUrl || productInfo.product_url || '';
 
+  // 🔎 Heuristic categorization to distinguish software vs physical supplies
+  try {
+    const heuristicCategory = categorizeProduct(
+      name,
+      `${title} ${desc}`
+    );
+
+    if (heuristicCategory) {
+      if (!VALID_CATEGORIES[heuristicCategory]) {
+        throw new Error(`Internal error: Invalid category "${heuristicCategory}"`);
+      }
+
+      console.log('✅ [CATEGORY] Heuristic match:', heuristicCategory);
+      return heuristicCategory;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (message.includes('too generic')) {
+      throw error;
+    }
+    console.log('ℹ️ [CATEGORY] Heuristic not conclusive:', error);
+  }
+
   const translated = await translateProductName(name);
   if (!name && !desc && !title && !url) {
     console.error('❌ [CATEGORY] No product information provided');
@@ -829,6 +887,183 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
   return winner.category;
 }
 
+function categorizeProduct(productName: string, productType: string): string {
+  const nameLower = (productName || '').toLowerCase();
+  const typeLower = (productType || '').toLowerCase();
+
+  // ============================================================
+  // STEP 1: EXPLICIT SOFTWARE/SERVICE CHECKS (must be very specific)
+  // ============================================================
+
+  // Known software brands (EXACT matches only)
+  const softwareBrands = [
+    'adobe', 'microsoft office', 'google workspace', 'spotify',
+    'netflix', 'zoom', 'slack', 'dropbox', 'salesforce',
+    'oracle', 'sap'
+  ];
+
+  const isSoftwareBrand = softwareBrands.some(
+    (brand) => nameLower.includes(brand) && !nameLower.includes('iphone') && !nameLower.includes('ipad')
+  );
+
+  // Software-specific keywords (MUST include at least 2)
+  const softwareKeywords = ['software', 'app', 'application', 'cloud', 'saas', 'suite', 'workspace'];
+  const typeKeywords = ['editor', 'editing', 'streaming', 'platform', 'service'];
+
+  const softwareKeywordCount =
+    softwareKeywords.filter((kw) => nameLower.includes(kw) || typeLower.includes(kw)).length +
+    typeKeywords.filter((kw) => typeLower.includes(kw)).length;
+
+  if (isSoftwareBrand || softwareKeywordCount >= 2) {
+    return 'digital_products_software';
+  }
+
+  // ============================================================
+  // STEP 2: ELECTRONICS (check BEFORE software)
+  // ============================================================
+
+  const electronicsKeywords = [
+    'iphone', 'ipad', 'macbook', 'laptop', 'smartphone', 'phone',
+    'tablet', 'computer', 'headphones', 'earbuds', 'headset',
+    'watch', 'smartwatch', 'tv', 'monitor', 'camera',
+    'console', 'gaming', 'galaxy', 'pixel', 'surface',
+    'lenovo', 'dell', 'hp', 'asus', 'acer', 'sony'
+  ];
+
+  const isElectronics = electronicsKeywords.some((kw) =>
+    nameLower.includes(kw) || typeLower.includes(kw)
+  );
+
+  if (isElectronics) {
+    return 'electronics';
+  }
+
+  // ============================================================
+  // STEP 3: CLOTHING/TEXTILES
+  // ============================================================
+
+  const clothingKeywords = [
+    'shoes', 'sneakers', 'boots', 'sandals', 'tênis',
+    'shirt', 'jacket', 'coat', 'pants', 'jeans', 'dress',
+    'sweater', 'hoodie', 'fleece', 'shorts', 'socks',
+    'nike', 'adidas', 'veja', 'patagonia', 'levi', 'zara'
+  ];
+
+  const isClothing = clothingKeywords.some((kw) =>
+    nameLower.includes(kw) || typeLower.includes(kw)
+  );
+
+  if (isClothing) {
+    return 'textiles_clothing';
+  }
+
+  // ============================================================
+  // STEP 4: COSMETICS/PERSONAL CARE
+  // ============================================================
+
+  const cosmeticsKeywords = [
+    'shampoo', 'conditioner', 'soap', 'lotion', 'cream',
+    'toothpaste', 'deodorant', 'perfume', 'makeup',
+    'skincare', 'haircare', 'facial', 'moisturizer',
+    'neutrogena', 'colgate', 'pantene', 'dove', 'loreal'
+  ];
+
+  const isCosmetics = cosmeticsKeywords.some((kw) =>
+    nameLower.includes(kw) || typeLower.includes(kw)
+  );
+
+  if (isCosmetics) {
+    return 'cosmetics_personal_care';
+  }
+
+  // ============================================================
+  // STEP 5: FOOD/BEVERAGES
+  // ============================================================
+
+  const foodKeywords = [
+    'chocolate', 'coffee', 'tea', 'snack', 'drink',
+    'juice', 'soda', 'beer', 'wine', 'water',
+    'hershey', 'starbucks', 'nestle', 'coca-cola'
+  ];
+
+  const isFood = foodKeywords.some((kw) =>
+    nameLower.includes(kw) || typeLower.includes(kw)
+  );
+
+  if (isFood) {
+    return 'food_agriculture';
+  }
+
+  // ============================================================
+  // STEP 6: FURNITURE/HOME
+  // ============================================================
+
+  const furnitureKeywords = [
+    'chair', 'armchair', 'sofa', 'couch', 'table', 'desk',
+    'bed', 'cabinet', 'shelf', 'lamp', 'ikea', 'west elm'
+  ];
+
+  const isFurniture = furnitureKeywords.some((kw) =>
+    nameLower.includes(kw) || typeLower.includes(kw)
+  );
+
+  if (isFurniture) {
+    return 'furniture';
+  }
+
+  // ============================================================
+  // STEP 7: AUTOMOTIVE
+  // ============================================================
+
+  const vehicleKeywords = [
+    'car', 'tesla', 'toyota', 'honda', 'ford', 'bmw',
+    'electric vehicle', 'ev', 'hybrid', 'sedan',
+    'suv', 'truck', 'prius', 'model 3', 'model s'
+  ];
+
+  const isVehicle = vehicleKeywords.some((kw) =>
+    nameLower.includes(kw) || typeLower.includes(kw)
+  );
+
+  if (isVehicle) {
+    return 'automotive';
+  }
+
+  // ============================================================
+  // STEP 8: OFFICE SUPPLIES (physical only)
+  // ============================================================
+
+  const officeSuppliesKeywords = [
+    'stapler', 'paper', 'pen', 'pencil', 'notebook',
+    'binder', 'folder', 'envelope', 'tape', 'glue',
+    'swingline', 'post-it', 'sharpie'
+  ];
+
+  const isOfficeSupplies = officeSuppliesKeywords.some((kw) =>
+    nameLower.includes(kw) || typeLower.includes(kw)
+  );
+
+  if (isOfficeSupplies) {
+    return 'office_supplies';
+  }
+
+  // ============================================================
+  // STEP 9: REJECT GENERIC PRODUCTS
+  // ============================================================
+
+  const genericNames = ['eco product', 'green product', 'sustainable', 'xyz', 'abc', 'test'];
+  const isGeneric = genericNames.some((g) => nameLower === g || nameLower === `${g} pro`);
+  const isTooShort = productName.trim().length < 5;
+  const justBrandNames = ['apple', 'samsung', 'google', 'amazon', 'nike', 'adidas'];
+  const isJustBrand = justBrandNames.includes(nameLower.trim());
+
+  if (isGeneric || isTooShort || isJustBrand) {
+    throw new Error('Could not identify product category - product name too generic or incomplete');
+  }
+
+  throw new Error('Could not identify product category');
+}
+
 // ===== ANALISAR COM GROQ (CORRIGIDO) =====
 async function analyzeWithGroq(
   productInfo: ProductInfo,
@@ -845,6 +1080,13 @@ async function analyzeWithGroq(
 
   const groq = new Groq({ apiKey: groqApiKey });
   const productName = productInfo.productName || productInfo.product_name || '';
+  const sustainabilityLeaders = [
+    'patagonia', 'veja', 'allbirds', 'fairphone', 'teracube',
+    'people tree', 'reformation', 'nudie jeans', 'mud jeans'
+  ];
+  const isLeader = sustainabilityLeaders.some((brand) =>
+    productName.toLowerCase().includes(brand)
+  );
 
   // Construir critérios da categoria
   const criteria = Object.entries(categoryData.sustainability_criteria)
@@ -868,11 +1110,43 @@ async function analyzeWithGroq(
       }`
     : '\n\nNO PRODUCTS FOUND - Suggest well-known sustainable brands.';
 
-  const prompt = `You are a sustainability expert.
+  const leaderNote = isLeader
+    ? 'NOTE: This brand is recognized as a sustainability leader. Score should reflect their strong commitment (typically 70-90).'
+    : '';
 
-PRODUCT: ${productName}
-TYPE: ${productType}
-CATEGORY: ${category}
+  const prompt = `You are a sustainability expert analyzing products.
+
+PRODUCT INFORMATION:
+- Name: ${productName}
+- Type: ${productType}
+- Category: ${categoryData.name}
+- Web Search Results: ${JSON.stringify(validProducts || [])}
+
+🚨 CRITICAL VALIDATION RULE:
+**Alternatives MUST serve THE SAME PRIMARY PURPOSE as the original product.**
+
+VALIDATION EXAMPLES:
+✅ CORRECT:
+- Adobe Photoshop → GIMP, Affinity Photo, Photopea (all are photo editing)
+- Nike Sneakers → Veja, Allbirds, Adidas Parley (all are sneakers)
+- Pantene Shampoo → Lush, Ethique bars, Organic Shop (all are hair care)
+
+❌ INCORRECT:
+- Adobe Photoshop → AWS, Azure, Google Cloud (different purposes)
+- Nike Sneakers → Patagonia Jackets, Organic Cotton T-shirts (different items)
+- iPhone → Samsung Galaxy Buds, Apple Watch (different devices)
+
+${leaderNote}
+
+SCORING GUIDELINES (be fair, not overly harsh):
+- 70-100: Excellent sustainability (certified B-Corp, carbon neutral, circular economy)
+- 50-69: Good sustainability (some certifications, transparent supply chain)
+- 30-49: Average sustainability (basic eco claims, minimal transparency)
+- 10-29: Poor sustainability (greenwashing, no certifications)
+- 0-9: Very poor sustainability (known environmental violations)
+
+IMPORTANT: A score of 30-35 should be reserved for products with MINIMAL sustainability effort.
+If a major brand has at least some recycling program or basic certifications, score should be 40-55.
 
 SUSTAINABILITY CRITERIA:
 ${criteria}
@@ -880,30 +1154,12 @@ ${criteria}
 CERTIFICATIONS: ${categoryData.certifications.join(', ')}
 ${productsText}
 
-${validProducts.length > 0 ? `
-CRITICAL RULES:
-1. Use ONLY products from list above
-2. Each alternative MUST be same type as "${productType}"
-3. Use EXACT names and URLs from list
-4. Score must be ≥ 70
-5. Return 5-8 alternatives
-6. Reject: books, guides, different types
-
-VALIDATION:
-- If original is "heels" → alternatives MUST be heels (NOT sneakers/boots)
-- If original is "shampoo" → alternatives MUST be shampoo (NOT conditioner)
-` : `
-Suggest 5-7 real sustainable brands for "${productType}".
-Be specific (brand + model).
-Provide realistic stores.
-`}
-
 RETURN JSON:
 {
   "originalProduct": {
     "name": "${productName}",
     "category": "${category}",
-    "sustainability_score": 20-45,
+    "sustainability_score": 40-55,
     "summary": "Environmental impact analysis",
     "environmental_impact": {
       "carbon_footprint": "assessment",
