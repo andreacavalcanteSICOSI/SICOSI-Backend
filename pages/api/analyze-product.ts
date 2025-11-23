@@ -3,6 +3,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import Groq from 'groq-sdk';
 import alternativesData from '../../data/alternatives.json';
+import config from '../../config';
 import webSearchClient from '../../services/web-search-client';
 
 // ===== TIPOS =====
@@ -140,9 +141,9 @@ interface AnalysisResponse {
 }
 
 // Cast seguro para o JSON
-const config = alternativesData as unknown as AlternativesConfig;
+const alternativesConfig = alternativesData as unknown as AlternativesConfig;
 
-const VALID_CATEGORIES: Record<string, true> = Object.keys(config.categories).reduce(
+const VALID_CATEGORIES: Record<string, true> = Object.keys(alternativesConfig.categories).reduce(
   (map, key) => {
     map[key] = true;
     return map;
@@ -153,7 +154,7 @@ const VALID_CATEGORIES: Record<string, true> = Object.keys(config.categories).re
 // ======= UTILIDADES DE CATEGORIZAÇÃO DINÂMICA =======
 function getTextProcessingConfig(): TextProcessingConfig {
   return (
-    config.text_processing || {
+    alternativesConfig.text_processing || {
       remove_accents: true,
       lowercase: true,
       remove_punctuation: true,
@@ -217,7 +218,7 @@ function countMatches(text: string, keyword: string): number {
 }
 
 function calculateCategoryScores(sources: ScoringSource[]): CategoryScore[] {
-  const categories = config.categories;
+  const categories = alternativesConfig.categories;
   const results: CategoryScore[] = [];
 
   for (const [categoryKey, categoryData] of Object.entries(categories)) {
@@ -261,9 +262,9 @@ function applyExclusionRules(
   primaryText: string
 ): CategoryScore[] {
   const normalizedPrimary = normalizeCategoryText(primaryText);
-  const categories = config.categories;
+  const categories = alternativesConfig.categories;
   const penalty =
-    config.scoring_config?.validation_thresholds?.exclusion_penalty ?? -999;
+    alternativesConfig.scoring_config?.validation_thresholds?.exclusion_penalty ?? -999;
 
   return scores.map((scoreData) => {
     const categoryData = categories[scoreData.category];
@@ -296,7 +297,7 @@ function applyExclusionRules(
 }
 
 function selectWinner(scores: CategoryScore[]): CategoryScore | null {
-  const thresholds = config.scoring_config.validation_thresholds;
+  const thresholds = alternativesConfig.scoring_config.validation_thresholds;
   const sorted = [...scores].sort((a, b) => b.score - a.score);
   const first = sorted[0];
   const second = sorted[1];
@@ -339,7 +340,7 @@ async function classifyWithAI(
     throw new Error('Cannot classify: low confidence and no AI available');
   }
 
-  const categories = config.categories;
+  const categories = alternativesConfig.categories;
   const categoryList = Object.entries(categories)
     .map(
       ([key, data]) =>
@@ -366,9 +367,9 @@ Category:`;
         { role: 'system', content: 'Return only the category key, nothing else.' },
         { role: 'user', content: prompt }
       ],
-      model: 'llama-3.3-70b-versatile',
-      temperature: 0.1,
-      max_tokens: 20
+      model: config.groq.defaultModel,
+      temperature: config.groq.operations.typeDetection.temperature,
+      max_tokens: config.groq.operations.typeDetection.maxTokens
     });
 
     const rawCategory = completion.choices[0]?.message?.content?.trim();
@@ -426,9 +427,9 @@ async function detectProductType(
   pageTitle: string = '',
   categoryName: string = ''
 ): Promise<string> {
-  
+
   // ✅ CORREÇÃO 3: FALLBACK INTELIGENTE com dicionário dinâmico do JSON
-  const categories = config.categories;
+  const categories = alternativesConfig.categories;
 
   // Buscar tipo conhecido no nome do produto
   const safeProductName = productName || '';
@@ -486,9 +487,9 @@ Return ONLY the specific product type in English, nothing else.`;
         { role: 'system', content: 'Extract product type. Return 1-2 words only.' },
         { role: 'user', content: prompt }
       ],
-      model: 'llama-3.3-70b-versatile',
-      temperature: 0.1,
-      max_tokens: 20
+      model: config.groq.defaultModel,
+      temperature: config.groq.operations.typeDetection.temperature,
+      max_tokens: config.groq.operations.typeDetection.maxTokens
     });
 
     const rawType = completion.choices[0]?.message?.content?.trim();
@@ -553,7 +554,7 @@ export default async function handler(
     const category = await identifyCategory(productInfo);
     console.log('📂 [CATEGORY] Identified:', category);
 
-    const categories = config.categories;
+    const categories = alternativesConfig.categories;
     const categoryData = categories[category];
 
     if (!categoryData) {
@@ -770,7 +771,7 @@ async function translateProductName(name: string): Promise<string> {
   }
 
   // ✅ CORREÇÃO 6: DICIONÁRIO BÁSICO DE TRADUÇÃO (dinâmico do JSON)
-  const commonTranslations = config.common_translations;
+  const commonTranslations = alternativesConfig.common_translations;
   const basicTranslations: Record<string, string> = commonTranslations || {
     // Fallback caso o JSON falhe
     'sapato': 'shoe', 'sapatos': 'shoes',
@@ -801,12 +802,12 @@ async function translateProductName(name: string): Promise<string> {
     const groq = new Groq({ apiKey: groqApiKey });
     const completion = await groq.chat.completions.create({
       messages: [
-        { role: 'system', content: 'Translate to English. Return ONLY the translation.' },
+        { role: 'system', content: 'Translate to English. Return ONLY the translation, nothing else.' },
         { role: 'user', content: name }
       ],
-      model: 'llama-3.3-70b-versatile',
-      temperature: 0.3,
-      max_tokens: 50
+      model: config.groq.defaultModel,
+      temperature: config.groq.operations.translation.temperature,
+      max_tokens: config.groq.operations.translation.maxTokens
     });
 
     const translation = completion.choices[0]?.message?.content?.trim();
@@ -861,7 +862,7 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
       'Product information is required. Please provide at least a product name, description, title, or URL.'
     );
   }
-  const weights = config.scoring_config.source_weights;
+  const weights = alternativesConfig.scoring_config.source_weights;
 
   const textSample = [translated, name, title, desc].filter(Boolean).join(' | ');
   console.log('🔍 [CATEGORY] Text sample:', textSample ? textSample.substring(0, 150) : '(empty)');
@@ -891,177 +892,17 @@ function categorizeProduct(productName: string, productType: string): string {
   const nameLower = (productName || '').toLowerCase();
   const typeLower = (productType || '').toLowerCase();
 
-  // ============================================================
-  // STEP 1: EXPLICIT SOFTWARE/SERVICE CHECKS (must be very specific)
-  // ============================================================
-
-  // Known software brands (EXACT matches only)
-  const softwareBrands = [
-    'adobe', 'microsoft office', 'google workspace', 'spotify',
-    'netflix', 'zoom', 'slack', 'dropbox', 'salesforce',
-    'oracle', 'sap'
-  ];
-
-  const isSoftwareBrand = softwareBrands.some(
-    (brand) => nameLower.includes(brand) && !nameLower.includes('iphone') && !nameLower.includes('ipad')
+  const isTooShort = productName.trim().length < 3;
+  const isJustNumbers = /^\d+$/.test(productName.trim());
+  const isGenericWord = ['product', 'item', 'thing', 'test', 'xyz', 'abc'].includes(
+    nameLower.trim()
   );
 
-  // Software-specific keywords (MUST include at least 2)
-  const softwareKeywords = ['software', 'app', 'application', 'cloud', 'saas', 'suite', 'workspace'];
-  const typeKeywords = ['editor', 'editing', 'streaming', 'platform', 'service'];
-
-  const softwareKeywordCount =
-    softwareKeywords.filter((kw) => nameLower.includes(kw) || typeLower.includes(kw)).length +
-    typeKeywords.filter((kw) => typeLower.includes(kw)).length;
-
-  if (isSoftwareBrand || softwareKeywordCount >= 2) {
-    return 'digital_products_software';
-  }
-
-  // ============================================================
-  // STEP 2: ELECTRONICS (check BEFORE software)
-  // ============================================================
-
-  const electronicsKeywords = [
-    'iphone', 'ipad', 'macbook', 'laptop', 'smartphone', 'phone',
-    'tablet', 'computer', 'headphones', 'earbuds', 'headset',
-    'watch', 'smartwatch', 'tv', 'monitor', 'camera',
-    'console', 'gaming', 'galaxy', 'pixel', 'surface',
-    'lenovo', 'dell', 'hp', 'asus', 'acer', 'sony'
-  ];
-
-  const isElectronics = electronicsKeywords.some((kw) =>
-    nameLower.includes(kw) || typeLower.includes(kw)
-  );
-
-  if (isElectronics) {
-    return 'electronics';
-  }
-
-  // ============================================================
-  // STEP 3: CLOTHING/TEXTILES
-  // ============================================================
-
-  const clothingKeywords = [
-    'shoes', 'sneakers', 'boots', 'sandals', 'tênis',
-    'shirt', 'jacket', 'coat', 'pants', 'jeans', 'dress',
-    'sweater', 'hoodie', 'fleece', 'shorts', 'socks',
-    'nike', 'adidas', 'veja', 'patagonia', 'levi', 'zara'
-  ];
-
-  const isClothing = clothingKeywords.some((kw) =>
-    nameLower.includes(kw) || typeLower.includes(kw)
-  );
-
-  if (isClothing) {
-    return 'textiles_clothing';
-  }
-
-  // ============================================================
-  // STEP 4: COSMETICS/PERSONAL CARE
-  // ============================================================
-
-  const cosmeticsKeywords = [
-    'shampoo', 'conditioner', 'soap', 'lotion', 'cream',
-    'toothpaste', 'deodorant', 'perfume', 'makeup',
-    'skincare', 'haircare', 'facial', 'moisturizer',
-    'neutrogena', 'colgate', 'pantene', 'dove', 'loreal'
-  ];
-
-  const isCosmetics = cosmeticsKeywords.some((kw) =>
-    nameLower.includes(kw) || typeLower.includes(kw)
-  );
-
-  if (isCosmetics) {
-    return 'cosmetics_personal_care';
-  }
-
-  // ============================================================
-  // STEP 5: FOOD/BEVERAGES
-  // ============================================================
-
-  const foodKeywords = [
-    'chocolate', 'coffee', 'tea', 'snack', 'drink',
-    'juice', 'soda', 'beer', 'wine', 'water',
-    'hershey', 'starbucks', 'nestle', 'coca-cola'
-  ];
-
-  const isFood = foodKeywords.some((kw) =>
-    nameLower.includes(kw) || typeLower.includes(kw)
-  );
-
-  if (isFood) {
-    return 'food_agriculture';
-  }
-
-  // ============================================================
-  // STEP 6: FURNITURE/HOME
-  // ============================================================
-
-  const furnitureKeywords = [
-    'chair', 'armchair', 'sofa', 'couch', 'table', 'desk',
-    'bed', 'cabinet', 'shelf', 'lamp', 'ikea', 'west elm'
-  ];
-
-  const isFurniture = furnitureKeywords.some((kw) =>
-    nameLower.includes(kw) || typeLower.includes(kw)
-  );
-
-  if (isFurniture) {
-    return 'furniture';
-  }
-
-  // ============================================================
-  // STEP 7: AUTOMOTIVE
-  // ============================================================
-
-  const vehicleKeywords = [
-    'car', 'tesla', 'toyota', 'honda', 'ford', 'bmw',
-    'electric vehicle', 'ev', 'hybrid', 'sedan',
-    'suv', 'truck', 'prius', 'model 3', 'model s'
-  ];
-
-  const isVehicle = vehicleKeywords.some((kw) =>
-    nameLower.includes(kw) || typeLower.includes(kw)
-  );
-
-  if (isVehicle) {
-    return 'automotive';
-  }
-
-  // ============================================================
-  // STEP 8: OFFICE SUPPLIES (physical only)
-  // ============================================================
-
-  const officeSuppliesKeywords = [
-    'stapler', 'paper', 'pen', 'pencil', 'notebook',
-    'binder', 'folder', 'envelope', 'tape', 'glue',
-    'swingline', 'post-it', 'sharpie'
-  ];
-
-  const isOfficeSupplies = officeSuppliesKeywords.some((kw) =>
-    nameLower.includes(kw) || typeLower.includes(kw)
-  );
-
-  if (isOfficeSupplies) {
-    return 'office_supplies';
-  }
-
-  // ============================================================
-  // STEP 9: REJECT GENERIC PRODUCTS
-  // ============================================================
-
-  const genericNames = ['eco product', 'green product', 'sustainable', 'xyz', 'abc', 'test'];
-  const isGeneric = genericNames.some((g) => nameLower === g || nameLower === `${g} pro`);
-  const isTooShort = productName.trim().length < 5;
-  const justBrandNames = ['apple', 'samsung', 'google', 'amazon', 'nike', 'adidas'];
-  const isJustBrand = justBrandNames.includes(nameLower.trim());
-
-  if (isGeneric || isTooShort || isJustBrand) {
+  if (isTooShort || isJustNumbers || isGenericWord) {
     throw new Error('Could not identify product category - product name too generic or incomplete');
   }
 
-  throw new Error('Could not identify product category');
+  throw new Error('Use identifyCategory() instead');
 }
 
 // ===== ANALISAR COM GROQ (CORRIGIDO) =====
@@ -1080,13 +921,6 @@ async function analyzeWithGroq(
 
   const groq = new Groq({ apiKey: groqApiKey });
   const productName = productInfo.productName || productInfo.product_name || '';
-  const sustainabilityLeaders = [
-    'patagonia', 'veja', 'allbirds', 'fairphone', 'teracube',
-    'people tree', 'reformation', 'nudie jeans', 'mud jeans'
-  ];
-  const isLeader = sustainabilityLeaders.some((brand) =>
-    productName.toLowerCase().includes(brand)
-  );
 
   // Construir critérios da categoria
   const criteria = Object.entries(categoryData.sustainability_criteria)
@@ -1110,10 +944,6 @@ async function analyzeWithGroq(
       }`
     : '\n\nNO PRODUCTS FOUND - Suggest well-known sustainable brands.';
 
-  const leaderNote = isLeader
-    ? 'NOTE: This brand is recognized as a sustainability leader. Score should reflect their strong commitment (typically 70-90).'
-    : '';
-
   const prompt = `You are a sustainability expert analyzing products.
 
 PRODUCT INFORMATION:
@@ -1136,7 +966,11 @@ VALIDATION EXAMPLES:
 - Nike Sneakers → Patagonia Jackets, Organic Cotton T-shirts (different items)
 - iPhone → Samsung Galaxy Buds, Apple Watch (different devices)
 
-${leaderNote}
+IMPORTANT INSTRUCTIONS:
+- If this product is from a well-known sustainability leader (like Patagonia, Veja, Fairphone, Allbirds, etc.),
+  assign a high score (70-90) reflecting their strong commitment.
+- Use your knowledge of sustainable brands - you don't need a predefined list.
+- Evaluate based on available information and brand reputation.
 
 SCORING GUIDELINES (be fair, not overly harsh):
 - 70-100: Excellent sustainability (certified B-Corp, carbon neutral, circular economy)
@@ -1191,9 +1025,9 @@ RETURN JSON:
         { role: 'system', content: 'Return valid JSON only. Use real products. Match product types strictly.' },
         { role: 'user', content: prompt }
       ],
-      model: 'llama-3.3-70b-versatile',
-      temperature: 0.2,
-      max_tokens: 4000,
+      model: config.groq.defaultModel,
+      temperature: config.groq.operations.analysis.temperature,
+      max_tokens: config.groq.operations.analysis.maxTokens,
       response_format: { type: 'json_object' }
     });
 
@@ -1202,48 +1036,22 @@ RETURN JSON:
 
     const result = JSON.parse(content) as GroqAnalysisResult;
 
-    // ✅ CORREÇÃO 2: VALIDAÇÃO PÓS-IA COM REGEX
     if (result.alternatives) {
-      const typeLower = (productType || '').toLowerCase();
-      
-      // ✅ Usar REGEX com word boundaries ao invés de includes()
-      const incompatibleTypes = config.incompatible_types;
-      const wrongTypes: Record<string, string[]> = incompatibleTypes || {
-        'heels': ['sneaker', 'boot', 'sandal', 'flat', 'loafer'],
-        'sneakers': ['heel', 'boot', 'sandal', 'dress shoe', 'pump'],
-        'boots': ['heel', 'sneaker', 'sandal', 'flat', 'pump']
-      };
-      
       result.alternatives = result.alternatives.filter(alt => {
         if (!alt || !alt.name) {
-          console.log('❌ [VALIDATION] Rejected (missing name)');
           return false;
         }
 
         const altName = (alt.name || '').toLowerCase();
-        
-        // Rejeitar livros/guias
-        if (/\b(book|guide|article|tips|living)\b/.test(altName)) {
-          console.log(`❌ [VALIDATION] Rejected (book): ${alt.name}`);
+
+        if (/\b(book|guide|article|manual|course|tutorial)\b/.test(altName)) {
           return false;
         }
-        
-        // Rejeitar score baixo
-        if (alt.sustainability_score < 70) {
-          console.log(`❌ [VALIDATION] Rejected (score): ${alt.name} (${alt.sustainability_score})`);
+
+        if (alt.sustainability_score < config.sustainability.minAlternativeScore) {
           return false;
         }
-        
-        // ✅ Rejeitar tipo diferente usando REGEX gerado dinamicamente
-        const wrongList = wrongTypes[typeLower] || [];
-        const wrongTypePatterns = wrongList.map(t => new RegExp(`\\b${t}s?\\b`, 'i'));
-        
-        if (wrongTypePatterns.some(pattern => pattern.test(altName))) {
-          console.log(`❌ [VALIDATION] Rejected (wrong type): ${alt.name} (expected: ${productType})`);
-          return false;
-        }
-        
-        console.log(`✅ [VALIDATION] Valid: ${alt.name} (${alt.sustainability_score})`);
+
         return true;
       });
     }
