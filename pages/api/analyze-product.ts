@@ -453,16 +453,25 @@ async function detectProductType(
   try {
     const groq = new Groq({ apiKey: groqApiKey });
     
-    const prompt = `Extract the specific product type from this information:
+    const prompt = `Extract the SPECIFIC and DETAILED product type from: "${productName}".
 
-Product name: ${productName}
-Page title: ${pageTitle || 'N/A'}
-Category: ${categoryName}
+CRITICAL INSTRUCTIONS:
+- Be EXTREMELY SPECIFIC, not generic
+- Include the product's primary function/purpose
+- For software, specify what kind of software (photo editing, video editing, office, etc.)
+- For electronics, specify the device type (smartphone, laptop, tablet, etc.)
+- For clothing, specify the item type (sneakers, jacket, t-shirt, etc.)
 
-Return ONLY the product type in 1-2 words (e.g., "heels", "shampoo", "laptop").
-Be specific: if it's heels, say "heels" not "shoes". If it's shampoo, say "shampoo" not "personal care".
+EXAMPLES:
+- "Adobe Photoshop 2024" → "photo editing software"
+- "Microsoft Office 365" → "office productivity software"
+- "iPhone 15 Pro" → "smartphone"
+- "Nike Air Max" → "athletic sneakers"
+- "IKEA POÄNG Chair" → "armchair furniture"
+- "Pantene Shampoo" → "hair care shampoo"
+- "Tesla Model 3" → "electric sedan vehicle"
 
-Product type:`;
+Return ONLY the specific product type in English, nothing else.`;
 
     const completion = await groq.chat.completions.create({
       messages: [
@@ -556,12 +565,19 @@ export default async function handler(
     });
     
     const realProducts = await searchRealProducts(
+      productName,
       productType,
       categoryData,
+      category,
       userCountry
     );
 
     console.log(`✅ [SEARCH] Found ${realProducts.length} products`);
+
+    console.log('📦 Product Name:', productName);
+    console.log('🏷️ Detected Type:', productType);
+    console.log('📁 Category:', categoryData.name);
+    console.log('🔍 Search Results Count:', realProducts.length);
 
     // 3. ANALISAR COM GROQ
     const analysis = await analyzeWithGroq(
@@ -575,10 +591,13 @@ export default async function handler(
     console.log('🤖 [GROQ] Analysis complete:', {
       originalScore: analysis.originalProduct.sustainability_score,
       alternativesCount: analysis.alternatives.length,
-      averageScore: analysis.alternatives.length > 0 
+      averageScore: analysis.alternatives.length > 0
         ? Math.round(analysis.alternatives.reduce((sum, a) => sum + a.sustainability_score, 0) / analysis.alternatives.length)
         : 0
     });
+
+    console.log('🎯 Final Score:', analysis.originalProduct.sustainability_score);
+    console.log('💡 Alternatives:', analysis.alternatives);
 
     // ✅ CORREÇÃO 1: ESTRUTURA DE RESPOSTA COMPLETA
     const response: AnalysisResponse = {
@@ -616,8 +635,10 @@ export default async function handler(
 
 // ===== BUSCAR PRODUTOS REAIS (CORRIGIDO) =====
 async function searchRealProducts(
+  productName: string,
   productType: string,
   categoryData: CategoryData,
+  category: string,
   userCountry: string
 ): Promise<Array<{title: string, url: string, snippet: string}>> {
   
@@ -626,14 +647,20 @@ async function searchRealProducts(
     'CA': 'Canada', 'AU': 'Australia', 'DE': 'Germany',
     'FR': 'France', 'ES': 'Spain', 'IT': 'Italy'
   };
-  const countryName = countryNames[userCountry] || 'Brazil';
   
-  // ✅ CORREÇÃO 4: QUERY SIMPLIFICADA com fallback
-  const topCert = categoryData.certifications[0] || 'eco-friendly';
-  
-  // Query inicial (específica)
-  let query = `sustainable ${productType} ${topCert} buy online`;
-  console.log('🔎 [SEARCH] Query (specific):', query);
+  // Construir query mais específica baseada na categoria
+  let query: string;
+
+  if (category === 'digital_products_software' || category === 'cloud_services') {
+    // Para software, incluir "alternative to" + nome do produto principal
+    const mainProduct = (productName || '').split(' ')[0];
+    query = `sustainable ${productType} alternative to ${mainProduct} eco-friendly`;
+  } else {
+    // Para produtos físicos, manter abordagem atual melhorada
+    query = `sustainable ${productType} eco-friendly certified brands buy`;
+  }
+
+  console.log(`🔍 Web Search Query: ${query}`);
 
   try {
     let results = await webSearchClient.search(query, {
@@ -868,11 +895,37 @@ async function analyzeWithGroq(
       }`
     : '\n\nNO PRODUCTS FOUND - Suggest well-known sustainable brands.';
 
-  const prompt = `You are a sustainability expert.
+  const prompt = `You are a sustainability expert analyzing products.
 
-PRODUCT: ${productName}
-TYPE: ${productType}
-CATEGORY: ${category}
+PRODUCT INFORMATION:
+- Name: ${productName}
+- Type: ${productType}
+- Category: ${categoryData.name}
+- Web Search Results: ${JSON.stringify(validProducts || [])}
+
+🚨 CRITICAL VALIDATION RULE:
+**Alternatives MUST serve THE SAME PRIMARY PURPOSE as the original product.**
+
+VALIDATION EXAMPLES:
+✅ CORRECT:
+- Adobe Photoshop → GIMP, Affinity Photo, Photopea (all are photo editing)
+- Nike Sneakers → Veja, Allbirds, Adidas Parley (all are sneakers)
+- Pantene Shampoo → Lush, Ethique bars, Organic Shop (all are hair care)
+
+❌ INCORRECT:
+- Adobe Photoshop → AWS, Azure, Google Cloud (different purposes)
+- Nike Sneakers → Patagonia Jackets, Organic Cotton T-shirts (different items)
+- iPhone → Samsung Galaxy Buds, Apple Watch (different devices)
+
+SCORING GUIDELINES (be fair, not overly harsh):
+- 70-100: Excellent sustainability (certified B-Corp, carbon neutral, circular economy)
+- 50-69: Good sustainability (some certifications, transparent supply chain)
+- 30-49: Average sustainability (basic eco claims, minimal transparency)
+- 10-29: Poor sustainability (greenwashing, no certifications)
+- 0-9: Very poor sustainability (known environmental violations)
+
+IMPORTANT: A score of 30-35 should be reserved for products with MINIMAL sustainability effort.
+If a major brand has at least some recycling program or basic certifications, score should be 40-55.
 
 SUSTAINABILITY CRITERIA:
 ${criteria}
@@ -880,30 +933,12 @@ ${criteria}
 CERTIFICATIONS: ${categoryData.certifications.join(', ')}
 ${productsText}
 
-${validProducts.length > 0 ? `
-CRITICAL RULES:
-1. Use ONLY products from list above
-2. Each alternative MUST be same type as "${productType}"
-3. Use EXACT names and URLs from list
-4. Score must be ≥ 70
-5. Return 5-8 alternatives
-6. Reject: books, guides, different types
-
-VALIDATION:
-- If original is "heels" → alternatives MUST be heels (NOT sneakers/boots)
-- If original is "shampoo" → alternatives MUST be shampoo (NOT conditioner)
-` : `
-Suggest 5-7 real sustainable brands for "${productType}".
-Be specific (brand + model).
-Provide realistic stores.
-`}
-
 RETURN JSON:
 {
   "originalProduct": {
     "name": "${productName}",
     "category": "${category}",
-    "sustainability_score": 20-45,
+    "sustainability_score": 40-55,
     "summary": "Environmental impact analysis",
     "environmental_impact": {
       "carbon_footprint": "assessment",
