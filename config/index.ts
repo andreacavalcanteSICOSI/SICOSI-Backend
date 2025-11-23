@@ -10,9 +10,25 @@ interface Config {
     defaultModel: string;
     temperature: number;
     maxTokens: number;
+    operations: {
+      translation: {
+        temperature: number;
+        maxTokens: number;
+      };
+      typeDetection: {
+        temperature: number;
+        maxTokens: number;
+      };
+      analysis: {
+        temperature: number;
+        maxTokens: number;
+      };
+    };
   };
   sustainability: {
     minScore: number;
+    minAlternativeScore: number;
+    leaderScoreRange: [number, number];
     keywords: string[];
   };
   search: {
@@ -31,13 +47,29 @@ const config: Config = {
   
   groq: {
     apiKey: process.env.GROQ_API_KEY,
-    defaultModel: 'llama-3.3-70b-versatile',
+    defaultModel: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
     temperature: 0.3,
-    maxTokens: 4000
+    maxTokens: 4000,
+    operations: {
+      translation: {
+        temperature: 0.1,
+        maxTokens: 20
+      },
+      typeDetection: {
+        temperature: 0.3,
+        maxTokens: 50
+      },
+      analysis: {
+        temperature: 0.2,
+        maxTokens: 4000
+      }
+    }
   },
 
   sustainability: {
-    minScore: 70,
+    minScore: parseInt(process.env.MIN_SUSTAINABILITY_SCORE || '70', 10),
+    minAlternativeScore: 70,
+    leaderScoreRange: [70, 90],
     keywords: [
       'sustainable', 'eco', 'organic', 'fair trade', 'biodegradable',
       'recycled', 'natural', 'green', 'ethical', 'renewable',
