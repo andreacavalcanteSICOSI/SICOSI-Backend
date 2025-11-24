@@ -972,6 +972,13 @@ IMPORTANT INSTRUCTIONS:
 - Use your knowledge of sustainable brands - you don't need a predefined list.
 - Evaluate based on available information and brand reputation.
 
+🎯 ALTERNATIVES REQUIREMENT:
+**You MUST provide at least 4 sustainable alternatives (ideally 4-6).**
+- Mix of well-known brands and emerging sustainable options
+- All alternatives must be the SAME product type as the original
+- Include both premium and affordable options when possible
+- If fewer than 4 alternatives exist in this category, include the best available options
+
 SCORING GUIDELINES (be fair, not overly harsh):
 - 70-100: Excellent sustainability (certified B-Corp, carbon neutral, circular economy)
 - 50-69: Good sustainability (some certifications, transparent supply chain)
@@ -1008,13 +1015,40 @@ RETURN JSON:
   },
   "alternatives": [
     {
-      "name": "EXACT name from list (SAME type as ${productType})",
+      "name": "Alternative 1 - EXACT name from list (SAME type as ${productType})",
       "description": "clear description",
       "benefits": "why more sustainable",
       "sustainability_score": 70-95,
       "where_to_buy": "store name",
       "certifications": ["relevant certs"],
       "product_url": "EXACT URL from list"
+    },
+    {
+      "name": "Alternative 2 - Another sustainable option",
+      "description": "clear description",
+      "benefits": "why more sustainable",
+      "sustainability_score": 70-95,
+      "where_to_buy": "store name",
+      "certifications": ["relevant certs"],
+      "product_url": "URL if available"
+    },
+    {
+      "name": "Alternative 3 - Third sustainable option",
+      "description": "clear description",
+      "benefits": "why more sustainable",
+      "sustainability_score": 70-95,
+      "where_to_buy": "store name",
+      "certifications": ["relevant certs"],
+      "product_url": "URL if available"
+    },
+    {
+      "name": "Alternative 4 - Fourth sustainable option",
+      "description": "clear description",
+      "benefits": "why more sustainable",
+      "sustainability_score": 70-95,
+      "where_to_buy": "store name",
+      "certifications": ["relevant certs"],
+      "product_url": "URL if available"
     }
   ]
 }`;
