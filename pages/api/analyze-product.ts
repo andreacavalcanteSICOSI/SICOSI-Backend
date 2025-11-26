@@ -6,6 +6,130 @@ import alternativesData from '../../data/alternatives.json';
 import config from '../../config';
 import webSearchClient from '../../services/web-search-client';
 
+/**
+ * Map ISO country code to language/locale
+ * @param {string} countryCode - ISO 3166-1 alpha-2 country code
+ * @returns {string} - Language locale (e.g., 'pt-BR', 'en-US')
+ */
+function getLanguageFromCountry(countryCode: string): string {
+  const languageMap: Record<string, string> = {
+    // Portuguese
+    'BR': 'pt-BR',
+    'PT': 'pt-PT',
+
+    // Spanish
+    'ES': 'es-ES',
+    'MX': 'es-MX',
+    'AR': 'es-AR',
+    'CL': 'es-CL',
+    'CO': 'es-CO',
+
+    // English
+    'US': 'en-US',
+    'GB': 'en-GB',
+    'CA': 'en-CA',
+    'AU': 'en-AU',
+
+    // French
+    'FR': 'fr-FR',
+
+    // German
+    'DE': 'de-DE',
+
+    // Italian
+    'IT': 'it-IT',
+
+    // Japanese
+    'JP': 'ja-JP',
+
+    // Chinese
+    'CN': 'zh-CN'
+  };
+
+  return languageMap[countryCode] || 'en-US';
+}
+
+/**
+ * Get preferred e-commerce sites by country
+ * @param {string} countryCode - ISO 3166-1 alpha-2 country code
+ * @returns {Array<string>} - List of local e-commerce sites
+ */
+function getLocalEcommerce(countryCode: string): string[] {
+  const ecommerceByCountry: Record<string, string[]> = {
+    'BR': [
+      'Mercado Livre (mercadolivre.com.br)',
+      'Americanas (americanas.com.br)',
+      'Magazine Luiza (magazineluiza.com.br)',
+      'Amazon Brasil (amazon.com.br)',
+      'Shopee Brasil (shopee.com.br)'
+    ],
+    'US': [
+      'Amazon (amazon.com)',
+      'Walmart (walmart.com)',
+      'Target (target.com)',
+      'eBay (ebay.com)',
+      'Best Buy (bestbuy.com)'
+    ],
+    'GB': [
+      'Amazon UK (amazon.co.uk)',
+      'Argos (argos.co.uk)',
+      'Currys (currys.co.uk)',
+      'John Lewis (johnlewis.com)'
+    ],
+    'ES': [
+      'Amazon España (amazon.es)',
+      'El Corte Inglés (elcorteingles.es)',
+      'MediaMarkt (mediamarkt.es)',
+      'Carrefour (carrefour.es)'
+    ],
+    'MX': [
+      'Mercado Libre (mercadolibre.com.mx)',
+      'Amazon México (amazon.com.mx)',
+      'Liverpool (liverpool.com.mx)',
+      'Coppel (coppel.com)'
+    ],
+    'AR': [
+      'Mercado Libre (mercadolibre.com.ar)',
+      'Falabella (falabella.com.ar)',
+      'Garbarino (garbarino.com)'
+    ],
+    'FR': [
+      'Amazon France (amazon.fr)',
+      'Cdiscount (cdiscount.com)',
+      'Fnac (fnac.com)',
+      'Darty (darty.com)'
+    ],
+    'DE': [
+      'Amazon Deutschland (amazon.de)',
+      'MediaMarkt (mediamarkt.de)',
+      'Saturn (saturn.de)',
+      'Otto (otto.de)'
+    ],
+    'IT': [
+      'Amazon Italia (amazon.it)',
+      'ePRICE (eprice.it)',
+      'Unieuro (unieuro.it)'
+    ],
+    'CA': [
+      'Amazon Canada (amazon.ca)',
+      'Best Buy Canada (bestbuy.ca)',
+      'Walmart Canada (walmart.ca)'
+    ],
+    'AU': [
+      'Amazon Australia (amazon.com.au)',
+      'JB Hi-Fi (jbhifi.com.au)',
+      'Harvey Norman (harveynorman.com.au)'
+    ]
+  };
+
+  return ecommerceByCountry[countryCode] || [
+    'Amazon',
+    'eBay',
+    'Local e-commerce sites',
+    'Specialty sustainable retailers'
+  ];
+}
+
 // ===== TIPOS =====
 interface ProductInfo {
   productName?: string;
@@ -373,14 +497,41 @@ Category:`;
     });
 
     const rawCategory = completion.choices[0]?.message?.content?.trim();
-    const category = rawCategory ? rawCategory.toLowerCase() : '';
+    let aiCategory = rawCategory ? rawCategory.toLowerCase() : '';
 
-    if (category && categories[category]) {
-      console.log(`🤖 [CATEGORY] AI classified as: ${category}`);
-      return category;
+    // NORMALIZE COMMON TYPOS
+    const typoMap: Record<string, string> = {
+      reuseable_zero_waste: 'reusable_zero_waste',
+      reuseable: 'reusable',
+      sustinable: 'sustainable',
+      sustianable: 'sustainable',
+      reneweable: 'renewable',
+      recylable: 'recyclable',
+      recycleable: 'recyclable',
+      biodegradeable: 'biodegradable',
+      composteable: 'compostable',
+      enviroment: 'environment',
+      enviorment: 'environment'
+    };
+
+    // Apply typo corrections
+    for (const [typo, correct] of Object.entries(typoMap)) {
+      if (aiCategory.includes(typo)) {
+        console.log(`🔧 [CATEGORY] Fixing typo: "${typo}" → "${correct}"`);
+        aiCategory = aiCategory.replace(typo, correct);
+      }
     }
 
-    throw new Error(`AI returned invalid category: ${category}`);
+    console.log(`🏷️ [CATEGORY] Normalized category: "${aiCategory}"`);
+
+    if (aiCategory && categories[aiCategory]) {
+      console.log(`🤖 [CATEGORY] AI classified as: ${aiCategory}`);
+      return aiCategory;
+    }
+
+    console.error(`❌ [CATEGORY] Invalid category after normalization: "${aiCategory}"`);
+    console.error(`📋 [CATEGORY] Available categories:`, Object.keys(categories));
+    throw new Error(`AI returned invalid category: ${aiCategory}`);
   } catch (error) {
     console.error('❌ [CATEGORY] AI classification failed:', error);
     throw new Error('Could not identify product category');
@@ -531,11 +682,15 @@ export default async function handler(
 
   try {
     const body = req.body as AnalysisRequest;
-    
+    const userCountry = body.userCountry || body.productInfo?.userCountry || 'US';
+
     const productInfo: ProductInfo = body.productInfo || {
       productName: body.product_name || body.productName,
-      pageUrl: body.product_url || body.pageUrl
+      pageUrl: body.product_url || body.pageUrl,
+      userCountry
     };
+
+    productInfo.userCountry = productInfo.userCountry || userCountry;
 
     const productName = productInfo.productName || productInfo.product_name;
     if (!productName) {
@@ -546,7 +701,7 @@ export default async function handler(
     console.log('📥 [ANALYZE] Request received:', {
       productName: productName,
       pageUrl: productInfo.pageUrl,
-      userCountry: productInfo.userCountry || body.userCountry || 'N/A',
+      userCountry: productInfo.userCountry || userCountry || 'N/A',
       timestamp: new Date().toISOString()
     });
 
@@ -566,8 +721,7 @@ export default async function handler(
     
     const translatedName = await translateProductName(productName);
     const productType = await detectProductType(translatedName, productInfo.pageTitle || '', categoryData.name);
-    const userCountry = productInfo.userCountry || body.userCountry || 'BR';
-    
+
     console.log('🏷️ [TYPE] Detected:', {
       productType: productType,
       translatedName: translatedName
@@ -594,7 +748,8 @@ export default async function handler(
       category,
       categoryData,
       productType,
-      realProducts
+      realProducts,
+      userCountry
     );
 
     console.log('🤖 [GROQ] Analysis complete:', {
@@ -911,7 +1066,8 @@ async function analyzeWithGroq(
   category: string,
   categoryData: CategoryData,
   productType: string,
-  realProducts: Array<{title: string, url: string, snippet: string}>
+  realProducts: Array<{title: string, url: string, snippet: string}>,
+  userCountry: string
 ): Promise<GroqAnalysisResult> {
   
   const groqApiKey = process.env.GROQ_API_KEY;
@@ -922,11 +1078,15 @@ async function analyzeWithGroq(
   const groq = new Groq({ apiKey: groqApiKey });
   const productName = productInfo.productName || productInfo.product_name || '';
 
-  // Construir critérios da categoria
+  const userLanguage = getLanguageFromCountry(userCountry);
+  const localEcommerce = getLocalEcommerce(userCountry);
+
+  // Build criteria text
   const criteria = Object.entries(categoryData.sustainability_criteria)
     .map(([key, val]) => `${key} (weight ${val.weight}): ${val.guidelines.join('; ')}`)
     .join('\n');
 
+  // Build products list
   const validProducts = (realProducts || [])
     .filter((p) => p && typeof p === 'object' && p.title && p.url)
     .map((p) => ({
@@ -935,123 +1095,159 @@ async function analyzeWithGroq(
       snippet: p.snippet || 'No description available'
     }));
 
-  // Construir lista de produtos
   const productsText = validProducts.length > 0
     ? `\n\nREAL PRODUCTS FOUND (${validProducts.length} total):\n${
         validProducts.map((p, i) =>
           `${i + 1}. ${p.title}\n   URL: ${p.url}\n   ${(p.snippet || 'No description available').substring(0, 100)}...\n`
         ).join('\n')
       }`
-    : '\n\nNO PRODUCTS FOUND - Suggest well-known sustainable brands.';
+    : '\n\nNO PRODUCTS FOUND - Suggest well-known sustainable brands in the user\'s country.';
 
-  const prompt = `You are a sustainability expert analyzing products.
+  const prompt = `You are a sustainability expert analyzing products for users worldwide.
 
-PRODUCT INFORMATION:
-- Name: ${productName}
-- Type: ${productType}
-- Category: ${categoryData.name}
-- Web Search Results: ${JSON.stringify(validProducts || [])}
+═══════════════════════════════════════════════════════════════
+USER CONTEXT (CRITICAL - READ CAREFULLY):
+═══════════════════════════════════════════════════════════════
+- User Country: ${userCountry}
+- User Language: ${userLanguage}
+- Local E-commerce Sites: ${localEcommerce.slice(0, 3).join(', ')}
 
-🚨 CRITICAL VALIDATION RULE:
-**Alternatives MUST serve THE SAME PRIMARY PURPOSE as the original product.**
+═══════════════════════════════════════════════════════════════
+LOCALIZATION REQUIREMENTS (MANDATORY):
+═══════════════════════════════════════════════════════════════
 
-VALIDATION EXAMPLES:
-✅ CORRECT:
-- Adobe Photoshop → GIMP, Affinity Photo, Photopea (all are photo editing)
-- Nike Sneakers → Veja, Allbirds, Adidas Parley (all are sneakers)
-- Pantene Shampoo → Lush, Ethique bars, Organic Shop (all are hair care)
+1. LANGUAGE: Respond ENTIRELY in ${userLanguage}
+   - ALL text fields (summary, strengths, weaknesses, recommendations, descriptions, benefits) MUST be in ${userLanguage}
+   - Do NOT use English unless userLanguage is en-US, en-GB, en-CA, or en-AU
+   
+2. E-COMMERCE: Suggest products available in ${userCountry}
+   - PRIORITIZE these local sites: ${localEcommerce.slice(0, 3).join(', ')}
+   - Use "where_to_buy" field to specify LOCAL retailers from the list above
+   - Provide product URLs from local e-commerce sites when possible
+   
+3. CERTIFICATIONS: Include certifications relevant to ${userCountry}
+   - For BR: INMETRO, Procel, FSC Brasil
+   - For EU countries: EU Ecolabel, FSC, Cradle to Cradle
+   - For US: EPA Safer Choice, Energy Star, USDA Organic, B Corp
+   - For MX/AR: FSC, Rainforest Alliance, Fair Trade
 
-❌ INCORRECT:
-- Adobe Photoshop → AWS, Azure, Google Cloud (different purposes)
-- Nike Sneakers → Patagonia Jackets, Organic Cotton T-shirts (different items)
-- iPhone → Samsung Galaxy Buds, Apple Watch (different devices)
+═══════════════════════════════════════════════════════════════
+PRODUCT TO ANALYZE:
+═══════════════════════════════════════════════════════════════
 
-IMPORTANT INSTRUCTIONS:
-- If this product is from a well-known sustainability leader (like Patagonia, Veja, Fairphone, Allbirds, etc.),
-  assign a high score (70-90) reflecting their strong commitment.
-- Use your knowledge of sustainable brands - you don't need a predefined list.
-- Evaluate based on available information and brand reputation.
+Product Name: ${productName}
+Product Type: ${productType}
+Category: ${categoryData.name}
+URL: ${productInfo.pageUrl || 'N/A'}
 
-🎯 ALTERNATIVES REQUIREMENT:
-**You MUST provide at least 4 sustainable alternatives (ideally 4-6).**
-- Mix of well-known brands and emerging sustainable options
-- All alternatives must be the SAME product type as the original
-- Include both premium and affordable options when possible
-- If fewer than 4 alternatives exist in this category, include the best available options
+SUSTAINABILITY CRITERIA FOR THIS CATEGORY:
+${criteria}
 
-SCORING GUIDELINES (be fair, not overly harsh):
-- 70-100: Excellent sustainability (certified B-Corp, carbon neutral, circular economy)
+RELEVANT CERTIFICATIONS: ${categoryData.certifications.join(', ')}
+${productsText}
+
+═══════════════════════════════════════════════════════════════
+CRITICAL VALIDATION RULES:
+═══════════════════════════════════════════════════════════════
+
+1. Alternatives MUST be the SAME product type as the original
+2. You MUST provide at least 4 sustainable alternatives
+3. Each alternative must have sustainability_score >= 70
+4. Use REAL products from the search results when available
+5. If no real products found, suggest well-known sustainable brands
+
+SCORING GUIDELINES:
+- 70-100: Excellent sustainability (B-Corp, carbon neutral, circular economy)
 - 50-69: Good sustainability (some certifications, transparent supply chain)
 - 30-49: Average sustainability (basic eco claims, minimal transparency)
 - 10-29: Poor sustainability (greenwashing, no certifications)
-- 0-9: Very poor sustainability (known environmental violations)
 
-IMPORTANT: A score of 30-35 should be reserved for products with MINIMAL sustainability effort.
-If a major brand has at least some recycling program or basic certifications, score should be 40-55.
+═══════════════════════════════════════════════════════════════
+REQUIRED JSON RESPONSE FORMAT:
+═══════════════════════════════════════════════════════════════
 
-SUSTAINABILITY CRITERIA:
-${criteria}
-
-CERTIFICATIONS: ${categoryData.certifications.join(', ')}
-${productsText}
-
-RETURN JSON:
 {
   "originalProduct": {
     "name": "${productName}",
     "category": "${category}",
-    "sustainability_score": 40-55,
-    "summary": "Environmental impact analysis",
+    "sustainability_score": <number 0-100>,
+    "summary": "<analysis in ${userLanguage}>",
     "environmental_impact": {
-      "carbon_footprint": "assessment",
-      "water_usage": "assessment",
-      "recyclability": "assessment",
-      "toxicity": "assessment"
+      "carbon_footprint": "<assessment>",
+      "water_usage": "<assessment>",
+      "recyclability": "<assessment>",
+      "toxicity": "<assessment>"
     },
-    "strengths": ["if any"],
-    "weaknesses": ["main issues"],
-    "certifications_found": [],
-    "recommendations": ["specific actions"]
+    "strengths": ["<strength in ${userLanguage}>", "<strength in ${userLanguage}>"],
+    "weaknesses": ["<weakness in ${userLanguage}>", "<weakness in ${userLanguage}>"],
+    "certifications_found": ["<certifications>"],
+    "recommendations": ["<recommendation in ${userLanguage}>", "<recommendation in ${userLanguage}>"],
   },
   "alternatives": [
     {
-      "name": "Alternative 1 - EXACT name from list (SAME type as ${productType})",
-      "description": "clear description",
-      "benefits": "why more sustainable",
-      "sustainability_score": 70-95,
-      "where_to_buy": "store name",
-      "certifications": ["relevant certs"],
-      "product_url": "EXACT URL from list"
-    },
-    {
-      "name": "Alternative 2 - Another sustainable option",
-      "description": "clear description",
-      "benefits": "why more sustainable",
-      "sustainability_score": 70-95,
-      "where_to_buy": "store name",
-      "certifications": ["relevant certs"],
-      "product_url": "URL if available"
-    },
-    {
-      "name": "Alternative 3 - Third sustainable option",
-      "description": "clear description",
-      "benefits": "why more sustainable",
-      "sustainability_score": 70-95,
-      "where_to_buy": "store name",
-      "certifications": ["relevant certs"],
-      "product_url": "URL if available"
-    },
-    {
-      "name": "Alternative 4 - Fourth sustainable option",
-      "description": "clear description",
-      "benefits": "why more sustainable",
-      "sustainability_score": 70-95,
-      "where_to_buy": "store name",
-      "certifications": ["relevant certs"],
-      "product_url": "URL if available"
+      "name": "<product name in ${userLanguage}>",
+      "description": "<clear description in ${userLanguage}>",
+      "benefits": "<why more sustainable, in ${userLanguage}>",
+      "sustainability_score": <number 70-100>,
+      "where_to_buy": "<prefer: ${localEcommerce[0]}, ${localEcommerce[1]}, or ${localEcommerce[2]}>",
+      "certifications": ["<relevant certifications>"],
+      "product_url": "<URL from local e-commerce if available>"
     }
   ]
-}`;
+}
+
+═══════════════════════════════════════════════════════════════
+LOCALIZATION EXAMPLES:
+═══════════════════════════════════════════════════════════════
+
+Example for userLanguage = "pt-BR", userCountry = "BR":
+{
+  "originalProduct": {
+    "summary": "Este produto descartável tem baixo impacto de sustentabilidade devido ao uso de plástico de uso único.",
+    "strengths": [],
+    "weaknesses": ["Plástico descartável de uso único", "Sem certificações ambientais"],
+    "recommendations": ["Considere copos reutilizáveis", "Busque alternativas compostáveis"]
+  },
+  "alternatives": [
+    {
+      "name": "Copos Compostáveis EcoPure",
+      "description": "Copos feitos de materiais biodegradáveis à base de plantas.",
+      "benefits": "Reduz resíduos plásticos e é compostável",
+      "where_to_buy": "Mercado Livre, Americanas",
+      "product_url": "https://mercadolivre.com.br/..."
+    }
+  ]
+}
+
+Example for userLanguage = "en-US", userCountry = "US":
+{
+  "originalProduct": {
+    "summary": "This disposable product has low sustainability impact due to single-use plastic.",
+    "strengths": [],
+    "weaknesses": ["Single-use disposable plastic", "No environmental certifications"],
+    "recommendations": ["Consider reusable cups", "Look for compostable alternatives"]
+  },
+  "alternatives": [
+    {
+      "name": "EcoPure Compostable Cups",
+      "description": "Cups made from plant-based biodegradable materials.",
+      "benefits": "Reduces plastic waste and is compostable",
+      "where_to_buy": "Amazon, Walmart",
+      "product_url": "https://amazon.com/..."
+    }
+  ]
+}
+
+═══════════════════════════════════════════════════════════════
+FINAL REMINDERS:
+═══════════════════════════════════════════════════════════════
+
+1. ALL TEXT FIELDS MUST BE IN ${userLanguage} - THIS IS CRITICAL
+2. PRIORITIZE LOCAL E-COMMERCE: ${localEcommerce[0]}, ${localEcommerce[1]}
+3. PROVIDE 4 ALTERNATIVES MINIMUM
+4. RETURN ONLY VALID JSON - NO MARKDOWN, NO COMMENTS
+
+Begin analysis now.`;
 
   try {
     const completion = await groq.chat.completions.create({
