@@ -6,6 +6,130 @@ import alternativesData from '../../data/alternatives.json';
 import config from '../../config';
 import webSearchClient from '../../services/web-search-client';
 
+/**
+ * Map ISO country code to language/locale
+ * @param {string} countryCode - ISO 3166-1 alpha-2 country code
+ * @returns {string} - Language locale (e.g., 'pt-BR', 'en-US')
+ */
+function getLanguageFromCountry(countryCode: string): string {
+  const languageMap: Record<string, string> = {
+    // Portuguese
+    'BR': 'pt-BR',
+    'PT': 'pt-PT',
+
+    // Spanish
+    'ES': 'es-ES',
+    'MX': 'es-MX',
+    'AR': 'es-AR',
+    'CL': 'es-CL',
+    'CO': 'es-CO',
+
+    // English
+    'US': 'en-US',
+    'GB': 'en-GB',
+    'CA': 'en-CA',
+    'AU': 'en-AU',
+
+    // French
+    'FR': 'fr-FR',
+
+    // German
+    'DE': 'de-DE',
+
+    // Italian
+    'IT': 'it-IT',
+
+    // Japanese
+    'JP': 'ja-JP',
+
+    // Chinese
+    'CN': 'zh-CN'
+  };
+
+  return languageMap[countryCode] || 'en-US';
+}
+
+/**
+ * Get preferred e-commerce sites by country
+ * @param {string} countryCode - ISO 3166-1 alpha-2 country code
+ * @returns {Array<string>} - List of local e-commerce sites
+ */
+function getLocalEcommerce(countryCode: string): string[] {
+  const ecommerceByCountry: Record<string, string[]> = {
+    'BR': [
+      'Mercado Livre (mercadolivre.com.br)',
+      'Americanas (americanas.com.br)',
+      'Magazine Luiza (magazineluiza.com.br)',
+      'Amazon Brasil (amazon.com.br)',
+      'Shopee Brasil (shopee.com.br)'
+    ],
+    'US': [
+      'Amazon (amazon.com)',
+      'Walmart (walmart.com)',
+      'Target (target.com)',
+      'eBay (ebay.com)',
+      'Best Buy (bestbuy.com)'
+    ],
+    'GB': [
+      'Amazon UK (amazon.co.uk)',
+      'Argos (argos.co.uk)',
+      'Currys (currys.co.uk)',
+      'John Lewis (johnlewis.com)'
+    ],
+    'ES': [
+      'Amazon España (amazon.es)',
+      'El Corte Inglés (elcorteingles.es)',
+      'MediaMarkt (mediamarkt.es)',
+      'Carrefour (carrefour.es)'
+    ],
+    'MX': [
+      'Mercado Libre (mercadolibre.com.mx)',
+      'Amazon México (amazon.com.mx)',
+      'Liverpool (liverpool.com.mx)',
+      'Coppel (coppel.com)'
+    ],
+    'AR': [
+      'Mercado Libre (mercadolibre.com.ar)',
+      'Falabella (falabella.com.ar)',
+      'Garbarino (garbarino.com)'
+    ],
+    'FR': [
+      'Amazon France (amazon.fr)',
+      'Cdiscount (cdiscount.com)',
+      'Fnac (fnac.com)',
+      'Darty (darty.com)'
+    ],
+    'DE': [
+      'Amazon Deutschland (amazon.de)',
+      'MediaMarkt (mediamarkt.de)',
+      'Saturn (saturn.de)',
+      'Otto (otto.de)'
+    ],
+    'IT': [
+      'Amazon Italia (amazon.it)',
+      'ePRICE (eprice.it)',
+      'Unieuro (unieuro.it)'
+    ],
+    'CA': [
+      'Amazon Canada (amazon.ca)',
+      'Best Buy Canada (bestbuy.ca)',
+      'Walmart Canada (walmart.ca)'
+    ],
+    'AU': [
+      'Amazon Australia (amazon.com.au)',
+      'JB Hi-Fi (jbhifi.com.au)',
+      'Harvey Norman (harveynorman.com.au)'
+    ]
+  };
+
+  return ecommerceByCountry[countryCode] || [
+    'Amazon',
+    'eBay',
+    'Local e-commerce sites',
+    'Specialty sustainable retailers'
+  ];
+}
+
 // ===== TIPOS =====
 interface ProductInfo {
   productName?: string;
@@ -531,11 +655,15 @@ export default async function handler(
 
   try {
     const body = req.body as AnalysisRequest;
-    
+    const userCountry = body.userCountry || body.productInfo?.userCountry || 'US';
+
     const productInfo: ProductInfo = body.productInfo || {
       productName: body.product_name || body.productName,
-      pageUrl: body.product_url || body.pageUrl
+      pageUrl: body.product_url || body.pageUrl,
+      userCountry
     };
+
+    productInfo.userCountry = productInfo.userCountry || userCountry;
 
     const productName = productInfo.productName || productInfo.product_name;
     if (!productName) {
@@ -546,7 +674,7 @@ export default async function handler(
     console.log('📥 [ANALYZE] Request received:', {
       productName: productName,
       pageUrl: productInfo.pageUrl,
-      userCountry: productInfo.userCountry || body.userCountry || 'N/A',
+      userCountry: productInfo.userCountry || userCountry || 'N/A',
       timestamp: new Date().toISOString()
     });
 
@@ -566,8 +694,7 @@ export default async function handler(
     
     const translatedName = await translateProductName(productName);
     const productType = await detectProductType(translatedName, productInfo.pageTitle || '', categoryData.name);
-    const userCountry = productInfo.userCountry || body.userCountry || 'BR';
-    
+
     console.log('🏷️ [TYPE] Detected:', {
       productType: productType,
       translatedName: translatedName
@@ -594,7 +721,8 @@ export default async function handler(
       category,
       categoryData,
       productType,
-      realProducts
+      realProducts,
+      userCountry
     );
 
     console.log('🤖 [GROQ] Analysis complete:', {
@@ -911,7 +1039,8 @@ async function analyzeWithGroq(
   category: string,
   categoryData: CategoryData,
   productType: string,
-  realProducts: Array<{title: string, url: string, snippet: string}>
+  realProducts: Array<{title: string, url: string, snippet: string}>,
+  userCountry: string
 ): Promise<GroqAnalysisResult> {
   
   const groqApiKey = process.env.GROQ_API_KEY;
@@ -922,136 +1051,95 @@ async function analyzeWithGroq(
   const groq = new Groq({ apiKey: groqApiKey });
   const productName = productInfo.productName || productInfo.product_name || '';
 
-  // Construir critérios da categoria
-  const criteria = Object.entries(categoryData.sustainability_criteria)
-    .map(([key, val]) => `${key} (weight ${val.weight}): ${val.guidelines.join('; ')}`)
-    .join('\n');
+  const userLanguage = getLanguageFromCountry(userCountry);
+  const localEcommerce = getLocalEcommerce(userCountry);
 
-  const validProducts = (realProducts || [])
-    .filter((p) => p && typeof p === 'object' && p.title && p.url)
-    .map((p) => ({
-      title: p.title || 'Untitled',
-      url: p.url || 'N/A',
-      snippet: p.snippet || 'No description available'
-    }));
+  const prompt = `You are a sustainability expert analyzing products for users worldwide.
 
-  // Construir lista de produtos
-  const productsText = validProducts.length > 0
-    ? `\n\nREAL PRODUCTS FOUND (${validProducts.length} total):\n${
-        validProducts.map((p, i) =>
-          `${i + 1}. ${p.title}\n   URL: ${p.url}\n   ${(p.snippet || 'No description available').substring(0, 100)}...\n`
-        ).join('\n')
-      }`
-    : '\n\nNO PRODUCTS FOUND - Suggest well-known sustainable brands.';
+═══════════════════════════════════════════════════════════════
+USER CONTEXT (CRITICAL - READ CAREFULLY):
+═══════════════════════════════════════════════════════════════
+- User Country: ${userCountry}
+- User Language: ${userLanguage}
+- Local E-commerce Sites: ${localEcommerce.slice(0, 3).join(', ')}
 
-  const prompt = `You are a sustainability expert analyzing products.
+═══════════════════════════════════════════════════════════════
+LOCALIZATION REQUIREMENTS (MANDATORY):
+═══════════════════════════════════════════════════════════════
 
-PRODUCT INFORMATION:
-- Name: ${productName}
-- Type: ${productType}
-- Category: ${categoryData.name}
-- Web Search Results: ${JSON.stringify(validProducts || [])}
+1. LANGUAGE: Respond ENTIRELY in ${userLanguage}
+   - ALL text fields must be in ${userLanguage}
+   - Do NOT use English unless userLanguage is en-US or en-GB
+   
+2. E-COMMERCE: Suggest products available in ${userCountry}
+   - Prioritize these local sites: ${localEcommerce.slice(0, 3).join(', ')}
+   - Provide real product URLs from these sites when possible
+   - Use "where_to_buy" field to specify local retailers
+   
+3. CERTIFICATIONS: Include certifications relevant to ${userCountry}
+   - Use local/regional certifications when applicable
+   - Example: For BR use INMETRO, for EU use EU Ecolabel, for US use EPA Safer Choice
 
-🚨 CRITICAL VALIDATION RULE:
-**Alternatives MUST serve THE SAME PRIMARY PURPOSE as the original product.**
+═══════════════════════════════════════════════════════════════
+PRODUCT TO ANALYZE:
+═══════════════════════════════════════════════════════════════
 
-VALIDATION EXAMPLES:
-✅ CORRECT:
-- Adobe Photoshop → GIMP, Affinity Photo, Photopea (all are photo editing)
-- Nike Sneakers → Veja, Allbirds, Adidas Parley (all are sneakers)
-- Pantene Shampoo → Lush, Ethique bars, Organic Shop (all are hair care)
+Product Name: ${productName}
+URL: ${productInfo.pageUrl}
+Category: ${category}
 
-❌ INCORRECT:
-- Adobe Photoshop → AWS, Azure, Google Cloud (different purposes)
-- Nike Sneakers → Patagonia Jackets, Organic Cotton T-shirts (different items)
-- iPhone → Samsung Galaxy Buds, Apple Watch (different devices)
+═══════════════════════════════════════════════════════════════
+REQUIRED JSON RESPONSE FORMAT:
+═══════════════════════════════════════════════════════════════
 
-IMPORTANT INSTRUCTIONS:
-- If this product is from a well-known sustainability leader (like Patagonia, Veja, Fairphone, Allbirds, etc.),
-  assign a high score (70-90) reflecting their strong commitment.
-- Use your knowledge of sustainable brands - you don't need a predefined list.
-- Evaluate based on available information and brand reputation.
-
-🎯 ALTERNATIVES REQUIREMENT:
-**You MUST provide at least 4 sustainable alternatives (ideally 4-6).**
-- Mix of well-known brands and emerging sustainable options
-- All alternatives must be the SAME product type as the original
-- Include both premium and affordable options when possible
-- If fewer than 4 alternatives exist in this category, include the best available options
-
-SCORING GUIDELINES (be fair, not overly harsh):
-- 70-100: Excellent sustainability (certified B-Corp, carbon neutral, circular economy)
-- 50-69: Good sustainability (some certifications, transparent supply chain)
-- 30-49: Average sustainability (basic eco claims, minimal transparency)
-- 10-29: Poor sustainability (greenwashing, no certifications)
-- 0-9: Very poor sustainability (known environmental violations)
-
-IMPORTANT: A score of 30-35 should be reserved for products with MINIMAL sustainability effort.
-If a major brand has at least some recycling program or basic certifications, score should be 40-55.
-
-SUSTAINABILITY CRITERIA:
-${criteria}
-
-CERTIFICATIONS: ${categoryData.certifications.join(', ')}
-${productsText}
-
-RETURN JSON:
 {
-  "originalProduct": {
-    "name": "${productName}",
-    "category": "${category}",
-    "sustainability_score": 40-55,
-    "summary": "Environmental impact analysis",
-    "environmental_impact": {
-      "carbon_footprint": "assessment",
-      "water_usage": "assessment",
-      "recyclability": "assessment",
-      "toxicity": "assessment"
-    },
-    "strengths": ["if any"],
-    "weaknesses": ["main issues"],
-    "certifications_found": [],
-    "recommendations": ["specific actions"]
-  },
+  "sustainability_score": <number 0-100>,
+  "summary": "<brief summary in ${userLanguage}>",
+  "strengths": ["<strength 1 in ${userLanguage}>", "<strength 2 in ${userLanguage}>"],
+  "weaknesses": ["<weakness 1 in ${userLanguage}>", "<weakness 2 in ${userLanguage}>"],
+  "recommendations": ["<recommendation 1 in ${userLanguage}>", "<recommendation 2 in ${userLanguage}>"],
   "alternatives": [
     {
-      "name": "Alternative 1 - EXACT name from list (SAME type as ${productType})",
-      "description": "clear description",
-      "benefits": "why more sustainable",
-      "sustainability_score": 70-95,
-      "where_to_buy": "store name",
-      "certifications": ["relevant certs"],
-      "product_url": "EXACT URL from list"
-    },
-    {
-      "name": "Alternative 2 - Another sustainable option",
-      "description": "clear description",
-      "benefits": "why more sustainable",
-      "sustainability_score": 70-95,
-      "where_to_buy": "store name",
-      "certifications": ["relevant certs"],
-      "product_url": "URL if available"
-    },
-    {
-      "name": "Alternative 3 - Third sustainable option",
-      "description": "clear description",
-      "benefits": "why more sustainable",
-      "sustainability_score": 70-95,
-      "where_to_buy": "store name",
-      "certifications": ["relevant certs"],
-      "product_url": "URL if available"
-    },
-    {
-      "name": "Alternative 4 - Fourth sustainable option",
-      "description": "clear description",
-      "benefits": "why more sustainable",
-      "sustainability_score": 70-95,
-      "where_to_buy": "store name",
-      "certifications": ["relevant certs"],
-      "product_url": "URL if available"
+      "name": "<product name in ${userLanguage}>",
+      "description": "<description in ${userLanguage}>",
+      "sustainability_score": <number 0-100>,
+      "benefits": "<benefits in ${userLanguage}>",
+      "where_to_buy": "<prefer ${localEcommerce[0]} or similar>",
+      "product_url": "<actual URL from ${localEcommerce[0]} if available, or Google search URL>",
+      "certifications": ["<certification 1>", "<certification 2>"]
     }
   ]
-}`;
+}
+
+═══════════════════════════════════════════════════════════════
+EXAMPLES BY LANGUAGE:
+═══════════════════════════════════════════════════════════════
+
+If userLanguage = "pt-BR" (Brazilian Portuguese):
+- summary: "Este produto tem baixo impacto ambiental devido..."
+- strengths: ["Uso de materiais recicláveis", "Certificação B Corp"]
+- where_to_buy: "Mercado Livre, Americanas"
+
+If userLanguage = "es-MX" (Mexican Spanish):
+- summary: "Este producto tiene bajo impacto ambiental debido..."
+- strengths: ["Uso de materiales reciclables", "Certificación B Corp"]
+- where_to_buy: "Mercado Libre, Amazon México"
+
+If userLanguage = "en-US" (US English):
+- summary: "This product has low environmental impact due to..."
+- strengths: ["Use of recyclable materials", "B Corp certification"]
+- where_to_buy: "Amazon, Walmart"
+
+═══════════════════════════════════════════════════════════════
+CRITICAL REMINDERS:
+═══════════════════════════════════════════════════════════════
+
+1. ALL text must be in ${userLanguage} - no exceptions
+2. Suggest 4 alternatives available in ${userCountry}
+3. Use real product URLs from ${localEcommerce[0]} when possible
+4. Return ONLY valid JSON (no markdown, no extra text)
+
+Begin analysis now.`;
 
   try {
     const completion = await groq.chat.completions.create({
