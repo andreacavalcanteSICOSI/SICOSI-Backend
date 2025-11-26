@@ -497,14 +497,41 @@ Category:`;
     });
 
     const rawCategory = completion.choices[0]?.message?.content?.trim();
-    const category = rawCategory ? rawCategory.toLowerCase() : '';
+    let aiCategory = rawCategory ? rawCategory.toLowerCase() : '';
 
-    if (category && categories[category]) {
-      console.log(`🤖 [CATEGORY] AI classified as: ${category}`);
-      return category;
+    // NORMALIZE COMMON TYPOS
+    const typoMap: Record<string, string> = {
+      reuseable_zero_waste: 'reusable_zero_waste',
+      reuseable: 'reusable',
+      sustinable: 'sustainable',
+      sustianable: 'sustainable',
+      reneweable: 'renewable',
+      recylable: 'recyclable',
+      recycleable: 'recyclable',
+      biodegradeable: 'biodegradable',
+      composteable: 'compostable',
+      enviroment: 'environment',
+      enviorment: 'environment'
+    };
+
+    // Apply typo corrections
+    for (const [typo, correct] of Object.entries(typoMap)) {
+      if (aiCategory.includes(typo)) {
+        console.log(`🔧 [CATEGORY] Fixing typo: "${typo}" → "${correct}"`);
+        aiCategory = aiCategory.replace(typo, correct);
+      }
     }
 
-    throw new Error(`AI returned invalid category: ${category}`);
+    console.log(`🏷️ [CATEGORY] Normalized category: "${aiCategory}"`);
+
+    if (aiCategory && categories[aiCategory]) {
+      console.log(`🤖 [CATEGORY] AI classified as: ${aiCategory}`);
+      return aiCategory;
+    }
+
+    console.error(`❌ [CATEGORY] Invalid category after normalization: "${aiCategory}"`);
+    console.error(`📋 [CATEGORY] Available categories:`, Object.keys(categories));
+    throw new Error(`AI returned invalid category: ${aiCategory}`);
   } catch (error) {
     console.error('❌ [CATEGORY] AI classification failed:', error);
     throw new Error('Could not identify product category');
