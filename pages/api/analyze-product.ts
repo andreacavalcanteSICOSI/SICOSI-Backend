@@ -49,6 +49,179 @@ function getLanguageFromCountry(countryCode: string): string {
   return languageMap[countryCode] || 'en-US';
 }
 
+// Detect language from product name text
+function detectLanguageFromText(text: string): string | null {
+  if (!text) return null;
+
+  const textLower = text.toLowerCase();
+
+  // Spanish indicators (high confidence)
+  const spanishPatterns = [
+    /\b(de|con|para|por|desde|hasta|como|muy|más|también|año|niño|mujer|hombre)\b/g,
+    /ción\b/g,  // -ción ending
+    /ñ/g        // Spanish ñ
+  ];
+
+  // Portuguese indicators (high confidence)
+  const portuguesePatterns = [
+    /\b(de|com|para|por|desde|até|como|muito|mais|também|ano|criança|mulher|homem)\b/g,
+    /ção\b/g,   // -ção ending
+    /ã|õ/g      // Portuguese tildes
+  ];
+
+  // French indicators
+  const frenchPatterns = [
+    /\b(de|avec|pour|par|depuis|jusqu'à|comme|très|plus|aussi|année|enfant|femme|homme)\b/g,
+    /ç/g,       // French cedilla
+    /\bqu['']il\b/g
+  ];
+
+  // German indicators
+  const germanPatterns = [
+    /\b(der|die|das|mit|für|von|seit|bis|wie|sehr|mehr|auch|jahr|kind|frau|mann)\b/g,
+    /ü|ö|ä|ß/g  // German umlauts
+  ];
+
+  // Count matches
+  let spanishCount = 0;
+  let portugueseCount = 0;
+  let frenchCount = 0;
+  let germanCount = 0;
+
+  spanishPatterns.forEach(pattern => {
+    const matches = textLower.match(pattern);
+    if (matches) spanishCount += matches.length;
+  });
+
+  portuguesePatterns.forEach(pattern => {
+    const matches = textLower.match(pattern);
+    if (matches) portugueseCount += matches.length;
+  });
+
+  frenchPatterns.forEach(pattern => {
+    const matches = textLower.match(pattern);
+    if (matches) frenchCount += matches.length;
+  });
+
+  germanPatterns.forEach(pattern => {
+    const matches = textLower.match(pattern);
+    if (matches) germanCount += matches.length;
+  });
+
+  console.log('🔍 [LANGUAGE] Detection:', {
+    spanish: spanishCount,
+    portuguese: portugueseCount,
+    french: frenchCount,
+    german: germanCount
+  });
+
+  // Determine language (need at least 3 matches for confidence)
+  const scores = {
+    'es': spanishCount,
+    'pt': portugueseCount,
+    'fr': frenchCount,
+    'de': germanCount
+  };
+
+  const winner = Object.entries(scores)
+    .filter(([_, count]) => count >= 3)
+    .sort(([_, a], [__, b]) => b - a)[0];
+
+  if (winner) {
+    console.log(`✅ [LANGUAGE] Detected: ${winner[0]} (${winner[1]} matches)`);
+    return winner[0];
+  }
+
+  console.log('⚠️ [LANGUAGE] Could not detect language from text');
+  return null;
+}
+
+// Map language code to country code
+function getCountryFromLanguage(langCode: string): string | null {
+  const langToCountry: Record<string, string> = {
+    'es': 'ES',  // Default Spanish to Spain
+    'pt': 'BR',  // Default Portuguese to Brazil
+    'fr': 'FR',
+    'de': 'DE',
+    'it': 'IT',
+    'en': 'US'
+  };
+  return langToCountry[langCode] || null;
+}
+
+// Cross-validate country using multiple signals
+function validateAndCorrectCountry(
+  userCountry: string,
+  pageUrl: string,
+  productName: string
+): string {
+  console.log('🔍 [VALIDATE] Cross-validating country...');
+  console.log('📍 [VALIDATE] Input:', { userCountry, pageUrl, productName: productName.substring(0, 50) });
+
+  const signals: { source: string; country: string; confidence: 'high' | 'medium' | 'low' }[] = [];
+
+  // SIGNAL 1: userCountry from frontend
+  signals.push({ source: 'frontend', country: userCountry, confidence: 'medium' });
+
+  // SIGNAL 2: Domain TLD
+  const domainMatch = pageUrl.match(/\.(com\.br|com\.mx|es|fr|de|it|co\.uk|com\.au|ca)($|\/)/);
+  if (domainMatch) {
+    const tld = domainMatch[1];
+    const tldToCountry: Record<string, string> = {
+      'com.br': 'BR',
+      'com.mx': 'MX',
+      'es': 'ES',
+      'fr': 'FR',
+      'de': 'DE',
+      'it': 'IT',
+      'co.uk': 'GB',
+      'com.au': 'AU',
+      'ca': 'CA'
+    };
+    const domainCountry = tldToCountry[tld];
+    if (domainCountry) {
+      signals.push({ source: 'domain', country: domainCountry, confidence: 'high' });
+      console.log(`✅ [VALIDATE] Domain signal: ${tld} → ${domainCountry}`);
+    }
+  }
+
+  // SIGNAL 3: Product name language
+  const detectedLang = detectLanguageFromText(productName);
+  if (detectedLang) {
+    const langCountry = getCountryFromLanguage(detectedLang);
+    if (langCountry) {
+      signals.push({ source: 'productName', country: langCountry, confidence: 'high' });
+      console.log(`✅ [VALIDATE] Product name signal: ${detectedLang} → ${langCountry}`);
+    }
+  }
+
+  console.log('📊 [VALIDATE] All signals:', signals);
+
+  // Count votes by country (weighted by confidence)
+  const votes: Record<string, number> = {};
+  signals.forEach(signal => {
+    const weight = signal.confidence === 'high' ? 2 : 1;
+    votes[signal.country] = (votes[signal.country] || 0) + weight;
+  });
+
+  console.log('🗳️ [VALIDATE] Votes:', votes);
+
+  // Get winner
+  const winner = Object.entries(votes)
+    .sort(([_, a], [__, b]) => b - a)[0];
+
+  const correctedCountry = winner[0];
+
+  if (correctedCountry !== userCountry) {
+    console.log(`🔄 [VALIDATE] Country corrected: ${userCountry} → ${correctedCountry}`);
+    console.log(`📊 [VALIDATE] Confidence: ${winner[1]} votes`);
+  } else {
+    console.log(`✅ [VALIDATE] Country confirmed: ${userCountry}`);
+  }
+
+  return correctedCountry;
+}
+
 /**
  * Get preferred e-commerce sites by country
  * @param {string} countryCode - ISO 3166-1 alpha-2 country code
@@ -682,15 +855,27 @@ export default async function handler(
 
   try {
     const body = req.body as AnalysisRequest;
-    const userCountry = body.userCountry || body.productInfo?.userCountry || 'US';
+    const rawUserCountry = body.userCountry || body.productInfo?.userCountry || 'US';
+    console.log('🌍 [COUNTRY] Raw user country:', rawUserCountry);
 
     const productInfo: ProductInfo = body.productInfo || {
       productName: body.product_name || body.productName,
       pageUrl: body.product_url || body.pageUrl,
-      userCountry
+      userCountry: rawUserCountry
     };
 
-    productInfo.userCountry = productInfo.userCountry || userCountry;
+    productInfo.userCountry = productInfo.userCountry || rawUserCountry;
+
+    // Cross-validate country using domain + product name
+    const userCountry = validateAndCorrectCountry(
+      productInfo.userCountry,
+      productInfo.pageUrl,
+      productInfo.productName || productInfo.product_name || ''
+    );
+
+    productInfo.userCountry = userCountry;
+
+    console.log('🌍 [COUNTRY] Validated country:', userCountry);
 
     const productName = productInfo.productName || productInfo.product_name;
     if (!productName) {
