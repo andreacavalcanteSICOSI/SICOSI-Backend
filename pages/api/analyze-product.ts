@@ -12,141 +12,9 @@ import webSearchClient from '../../services/web-search-client';
  * @returns {string} - Language locale (e.g., 'pt-BR', 'en-US')
  */
 function getLanguageFromCountry(countryCode: string): string {
-  const languageMap: Record<string, string> = {
-    // Portuguese
-    'BR': 'pt-BR',
-    'PT': 'pt-PT',
-
-    // Spanish
-    'ES': 'es-ES',
-    'MX': 'es-MX',
-    'AR': 'es-AR',
-    'CL': 'es-CL',
-    'CO': 'es-CO',
-
-    // English
-    'US': 'en-US',
-    'GB': 'en-GB',
-    'CA': 'en-CA',
-    'AU': 'en-AU',
-
-    // French
-    'FR': 'fr-FR',
-
-    // German
-    'DE': 'de-DE',
-
-    // Italian
-    'IT': 'it-IT',
-
-    // Japanese
-    'JP': 'ja-JP',
-
-    // Chinese
-    'CN': 'zh-CN'
-  };
-
-  return languageMap[countryCode] || 'en-US';
-}
-
-// Detect language from product name text
-function detectLanguageFromText(text: string): string | null {
-  if (!text) return null;
-
-  const textLower = text.toLowerCase();
-
-  // Spanish indicators (high confidence)
-  const spanishPatterns = [
-    /\b(de|con|para|por|desde|hasta|como|muy|más|también|año|niño|mujer|hombre)\b/g,
-    /ción\b/g,  // -ción ending
-    /ñ/g        // Spanish ñ
-  ];
-
-  // Portuguese indicators (high confidence)
-  const portuguesePatterns = [
-    /\b(de|com|para|por|desde|até|como|muito|mais|também|ano|criança|mulher|homem)\b/g,
-    /ção\b/g,   // -ção ending
-    /ã|õ/g      // Portuguese tildes
-  ];
-
-  // French indicators
-  const frenchPatterns = [
-    /\b(de|avec|pour|par|depuis|jusqu'à|comme|très|plus|aussi|année|enfant|femme|homme)\b/g,
-    /ç/g,       // French cedilla
-    /\bqu['']il\b/g
-  ];
-
-  // German indicators
-  const germanPatterns = [
-    /\b(der|die|das|mit|für|von|seit|bis|wie|sehr|mehr|auch|jahr|kind|frau|mann)\b/g,
-    /ü|ö|ä|ß/g  // German umlauts
-  ];
-
-  // Count matches
-  let spanishCount = 0;
-  let portugueseCount = 0;
-  let frenchCount = 0;
-  let germanCount = 0;
-
-  spanishPatterns.forEach(pattern => {
-    const matches = textLower.match(pattern);
-    if (matches) spanishCount += matches.length;
-  });
-
-  portuguesePatterns.forEach(pattern => {
-    const matches = textLower.match(pattern);
-    if (matches) portugueseCount += matches.length;
-  });
-
-  frenchPatterns.forEach(pattern => {
-    const matches = textLower.match(pattern);
-    if (matches) frenchCount += matches.length;
-  });
-
-  germanPatterns.forEach(pattern => {
-    const matches = textLower.match(pattern);
-    if (matches) germanCount += matches.length;
-  });
-
-  console.log('🔍 [LANGUAGE] Detection:', {
-    spanish: spanishCount,
-    portuguese: portugueseCount,
-    french: frenchCount,
-    german: germanCount
-  });
-
-  // Determine language (need at least 3 matches for confidence)
-  const scores = {
-    'es': spanishCount,
-    'pt': portugueseCount,
-    'fr': frenchCount,
-    'de': germanCount
-  };
-
-  const winner = Object.entries(scores)
-    .filter(([_, count]) => count >= 3)
-    .sort(([_, a], [__, b]) => b - a)[0];
-
-  if (winner) {
-    console.log(`✅ [LANGUAGE] Detected: ${winner[0]} (${winner[1]} matches)`);
-    return winner[0];
-  }
-
-  console.log('⚠️ [LANGUAGE] Could not detect language from text');
-  return null;
-}
-
-// Map language code to country code
-function getCountryFromLanguage(langCode: string): string | null {
-  const langToCountry: Record<string, string> = {
-    'es': 'ES',  // Default Spanish to Spain
-    'pt': 'BR',  // Default Portuguese to Brazil
-    'fr': 'FR',
-    'de': 'DE',
-    'it': 'IT',
-    'en': 'US'
-  };
-  return langToCountry[langCode] || null;
+  // Return ISO locale format for reference only
+  // Groq will detect actual language from product name
+  return `${countryCode.toLowerCase()}-${countryCode}`;
 }
 
 // Cross-validate country using multiple signals
@@ -185,15 +53,9 @@ function validateAndCorrectCountry(
     }
   }
 
-  // SIGNAL 3: Product name language
-  const detectedLang = detectLanguageFromText(productName);
-  if (detectedLang) {
-    const langCountry = getCountryFromLanguage(detectedLang);
-    if (langCountry) {
-      signals.push({ source: 'productName', country: langCountry, confidence: 'high' });
-      console.log(`✅ [VALIDATE] Product name signal: ${detectedLang} → ${langCountry}`);
-    }
-  }
+  // SIGNAL 3: Product name language - REMOVED
+  // Let Groq handle language detection automatically
+  console.log('ℹ️ [VALIDATE] Language detection delegated to Groq');
 
   console.log('📊 [VALIDATE] All signals:', signals);
 
@@ -292,14 +154,40 @@ function getLocalEcommerce(countryCode: string): string[] {
       'Amazon Australia (amazon.com.au)',
       'JB Hi-Fi (jbhifi.com.au)',
       'Harvey Norman (harveynorman.com.au)'
+    ],
+    'KR': [
+      'Coupang (coupang.com)',
+      'Gmarket (gmarket.co.kr)',
+      '11번가 (11st.co.kr)',
+      'Interpark (interpark.com)'
+    ],
+    'JP': [
+      'Rakuten (rakuten.co.jp)',
+      'Amazon Japan (amazon.co.jp)',
+      'Mercari (mercari.com)'
+    ],
+    'CN': [
+      'Taobao (taobao.com)',
+      'JD.com (jd.com)',
+      'Tmall (tmall.com)'
+    ],
+    'IN': [
+      'Amazon India (amazon.in)',
+      'Flipkart (flipkart.com)',
+      'Myntra (myntra.com)'
+    ],
+    'RU': [
+      'Wildberries (wildberries.ru)',
+      'Ozon (ozon.ru)',
+      'Yandex Market (market.yandex.ru)'
     ]
   };
 
   return ecommerceByCountry[countryCode] || [
+    `Local ${countryCode} e-commerce sites`,
     'Amazon',
     'eBay',
-    'Local e-commerce sites',
-    'Specialty sustainable retailers'
+    'Local retailers'
   ];
 }
 
@@ -1263,7 +1151,6 @@ async function analyzeWithGroq(
   const groq = new Groq({ apiKey: groqApiKey });
   const productName = productInfo.productName || productInfo.product_name || '';
 
-  const userLanguage = getLanguageFromCountry(userCountry);
   const localEcommerce = getLocalEcommerce(userCountry);
 
   // Build criteria text
@@ -1291,38 +1178,79 @@ async function analyzeWithGroq(
   const prompt = `You are a sustainability expert analyzing products for users worldwide.
 
 ═══════════════════════════════════════════════════════════════
-USER CONTEXT (CRITICAL - READ CAREFULLY):
+USER CONTEXT:
 ═══════════════════════════════════════════════════════════════
 - User Country: ${userCountry}
-- User Language: ${userLanguage}
-- Local E-commerce Sites: ${localEcommerce.slice(0, 3).join(', ')}
+- Product Name: ${productName}
+- Local E-commerce Sites: ${localEcommerce.slice(0, 5).join(', ')}
 
 ═══════════════════════════════════════════════════════════════
-LOCALIZATION REQUIREMENTS (MANDATORY):
+DYNAMIC LOCALIZATION (CRITICAL):
 ═══════════════════════════════════════════════════════════════
 
-1. LANGUAGE: Respond ENTIRELY in ${userLanguage}
-   - ALL text fields (summary, strengths, weaknesses, recommendations, descriptions, benefits) MUST be in ${userLanguage}
-   - Do NOT use English unless userLanguage is en-US, en-GB, en-CA, or en-AU
-   
-2. E-COMMERCE: Suggest products available in ${userCountry}
-   - PRIORITIZE these local sites: ${localEcommerce.slice(0, 3).join(', ')}
-   - Use "where_to_buy" field to specify LOCAL retailers from the list above
-   - Provide product URLs from local e-commerce sites when possible
-   
-3. CERTIFICATIONS: Include certifications relevant to ${userCountry}
-   - For BR: INMETRO, Procel, FSC Brasil
-   - For EU countries: EU Ecolabel, FSC, Cradle to Cradle
-   - For US: EPA Safer Choice, Energy Star, USDA Organic, B Corp
-   - For MX/AR: FSC, Rainforest Alliance, Fair Trade
+1. LANGUAGE DETECTION:
+   - Analyze the product name: "${productName}"
+   - Determine the language automatically
+   - Respond in the SAME LANGUAGE as the product name
+   - If product name is in Korean, respond in Korean
+   - If product name is in German, respond in German
+   - If product name is in Spanish, respond in Spanish
+   - And so on for ANY language
+
+2. E-COMMERCE SITES:
+   - User is in ${userCountry}
+   - Suggest products available in these local sites: ${localEcommerce.join(', ')}
+   - Provide realistic product URLs from local e-commerce
+
+3. CERTIFICATIONS:
+   - Include certifications relevant to ${userCountry}
+   - Research what certifications are used in this country
 
 ═══════════════════════════════════════════════════════════════
-PRODUCT TO ANALYZE:
+EXAMPLES:
 ═══════════════════════════════════════════════════════════════
 
-Product Name: ${productName}
-Product Type: ${productType}
+Example 1 - Korean product:
+Input: "남성용 가을 겨울 패턴 캐주얼 투피스"
+Country: KR
+Response: {
+  "summary": "이 제품은 합성 소재를 사용하여...",
+  "weaknesses": ["합성 소재", "환경 인증 없음"],
+  "where_to_buy": "Coupang, Gmarket"
+}
+
+Example 2 - German product:
+Input: "Lässiges zweiteiliges Set für Herren"
+Country: DE
+Response: {
+  "summary": "Dieses Produkt hat eine niedrige...",
+  "weaknesses": ["Synthetische Materialien", "Keine Zertifizierungen"],
+  "where_to_buy": "Amazon Deutschland, MediaMarkt"
+}
+
+Example 3 - Portuguese product:
+Input: "Conjunto casual de duas peças"
+Country: BR
+Response: {
+  "summary": "Este produto tem baixo impacto...",
+  "weaknesses": ["Materiais sintéticos", "Sem certificações"],
+  "where_to_buy": "Mercado Livre, Americanas"
+}
+
+═══════════════════════════════════════════════════════════════
+IMPORTANT:
+═══════════════════════════════════════════════════════════════
+
+- Do NOT ask what language to use
+- Do NOT default to English unless product name is in English
+- Detect language automatically from product name
+- Match the language exactly
+- This works for ANY language: Korean, Japanese, Chinese, Arabic, Hindi, etc.
+
+Now analyze this product:
+Product: ${productName}
 Category: ${categoryData.name}
+Country: ${userCountry}
 URL: ${productInfo.pageUrl || 'N/A'}
 
 SUSTAINABILITY CRITERIA FOR THIS CATEGORY:
@@ -1356,23 +1284,23 @@ REQUIRED JSON RESPONSE FORMAT:
     "name": "${productName}",
     "category": "${category}",
     "sustainability_score": <number 0-100>,
-    "summary": "<analysis in ${userLanguage}>",
+    "summary": "<analysis in detected language>",
     "environmental_impact": {
       "carbon_footprint": "<assessment>",
       "water_usage": "<assessment>",
       "recyclability": "<assessment>",
       "toxicity": "<assessment>"
     },
-    "strengths": ["<strength in ${userLanguage}>", "<strength in ${userLanguage}>"],
-    "weaknesses": ["<weakness in ${userLanguage}>", "<weakness in ${userLanguage}>"],
+    "strengths": ["<strength in detected language>", "<strength in detected language>"],
+    "weaknesses": ["<weakness in detected language>", "<weakness in detected language>"],
     "certifications_found": ["<certifications>"],
-    "recommendations": ["<recommendation in ${userLanguage}>", "<recommendation in ${userLanguage}>"],
+    "recommendations": ["<recommendation in detected language>", "<recommendation in detected language>"],
   },
   "alternatives": [
     {
-      "name": "<product name in ${userLanguage}>",
-      "description": "<clear description in ${userLanguage}>",
-      "benefits": "<why more sustainable, in ${userLanguage}>",
+      "name": "<product name in detected language>",
+      "description": "<clear description in detected language>",
+      "benefits": "<why more sustainable, in detected language>",
       "sustainability_score": <number 70-100>,
       "where_to_buy": "<prefer: ${localEcommerce[0]}, ${localEcommerce[1]}, or ${localEcommerce[2]}>",
       "certifications": ["<relevant certifications>"],
@@ -1382,52 +1310,10 @@ REQUIRED JSON RESPONSE FORMAT:
 }
 
 ═══════════════════════════════════════════════════════════════
-LOCALIZATION EXAMPLES:
-═══════════════════════════════════════════════════════════════
-
-Example for userLanguage = "pt-BR", userCountry = "BR":
-{
-  "originalProduct": {
-    "summary": "Este produto descartável tem baixo impacto de sustentabilidade devido ao uso de plástico de uso único.",
-    "strengths": [],
-    "weaknesses": ["Plástico descartável de uso único", "Sem certificações ambientais"],
-    "recommendations": ["Considere copos reutilizáveis", "Busque alternativas compostáveis"]
-  },
-  "alternatives": [
-    {
-      "name": "Copos Compostáveis EcoPure",
-      "description": "Copos feitos de materiais biodegradáveis à base de plantas.",
-      "benefits": "Reduz resíduos plásticos e é compostável",
-      "where_to_buy": "Mercado Livre, Americanas",
-      "product_url": "https://mercadolivre.com.br/..."
-    }
-  ]
-}
-
-Example for userLanguage = "en-US", userCountry = "US":
-{
-  "originalProduct": {
-    "summary": "This disposable product has low sustainability impact due to single-use plastic.",
-    "strengths": [],
-    "weaknesses": ["Single-use disposable plastic", "No environmental certifications"],
-    "recommendations": ["Consider reusable cups", "Look for compostable alternatives"]
-  },
-  "alternatives": [
-    {
-      "name": "EcoPure Compostable Cups",
-      "description": "Cups made from plant-based biodegradable materials.",
-      "benefits": "Reduces plastic waste and is compostable",
-      "where_to_buy": "Amazon, Walmart",
-      "product_url": "https://amazon.com/..."
-    }
-  ]
-}
-
-═══════════════════════════════════════════════════════════════
 FINAL REMINDERS:
 ═══════════════════════════════════════════════════════════════
 
-1. ALL TEXT FIELDS MUST BE IN ${userLanguage} - THIS IS CRITICAL
+1. RESPOND ENTIRELY in the detected language from the product name
 2. PRIORITIZE LOCAL E-COMMERCE: ${localEcommerce[0]}, ${localEcommerce[1]}
 3. PROVIDE 4 ALTERNATIVES MINIMUM
 4. RETURN ONLY VALID JSON - NO MARKDOWN, NO COMMENTS
