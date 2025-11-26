@@ -152,11 +152,11 @@ function getCountryFromLanguage(langCode: string): string | null {
 // Cross-validate country using multiple signals
 function validateAndCorrectCountry(
   userCountry: string,
-  pageUrl: string,
+  pageUrl: string | undefined,
   productName: string
 ): string {
   console.log('🔍 [VALIDATE] Cross-validating country...');
-  console.log('📍 [VALIDATE] Input:', { userCountry, pageUrl, productName: productName.substring(0, 50) });
+  console.log('📍 [VALIDATE] Input:', { userCountry, pageUrl: pageUrl || 'N/A', productName: productName.substring(0, 50) });
 
   const signals: { source: string; country: string; confidence: 'high' | 'medium' | 'low' }[] = [];
 
@@ -164,7 +164,7 @@ function validateAndCorrectCountry(
   signals.push({ source: 'frontend', country: userCountry, confidence: 'medium' });
 
   // SIGNAL 2: Domain TLD
-  const domainMatch = pageUrl.match(/\.(com\.br|com\.mx|es|fr|de|it|co\.uk|com\.au|ca)($|\/)/);
+  const domainMatch = (pageUrl || '').match(/\.(com\.br|com\.mx|es|fr|de|it|co\.uk|com\.au|ca)($|\/)/);
   if (domainMatch) {
     const tld = domainMatch[1];
     const tldToCountry: Record<string, string> = {
