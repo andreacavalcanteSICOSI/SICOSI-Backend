@@ -1054,6 +1054,28 @@ async function analyzeWithGroq(
   const userLanguage = getLanguageFromCountry(userCountry);
   const localEcommerce = getLocalEcommerce(userCountry);
 
+  // Build criteria text
+  const criteria = Object.entries(categoryData.sustainability_criteria)
+    .map(([key, val]) => `${key} (weight ${val.weight}): ${val.guidelines.join('; ')}`)
+    .join('\n');
+
+  // Build products list
+  const validProducts = (realProducts || [])
+    .filter((p) => p && typeof p === 'object' && p.title && p.url)
+    .map((p) => ({
+      title: p.title || 'Untitled',
+      url: p.url || 'N/A',
+      snippet: p.snippet || 'No description available'
+    }));
+
+  const productsText = validProducts.length > 0
+    ? `\n\nREAL PRODUCTS FOUND (${validProducts.length} total):\n${
+        validProducts.map((p, i) =>
+          `${i + 1}. ${p.title}\n   URL: ${p.url}\n   ${(p.snippet || 'No description available').substring(0, 100)}...\n`
+        ).join('\n')
+      }`
+    : '\n\nNO PRODUCTS FOUND - Suggest well-known sustainable brands in the user\'s country.';
+
   const prompt = `You are a sustainability expert analyzing products for users worldwide.
 
 ═══════════════════════════════════════════════════════════════
@@ -1068,76 +1090,135 @@ LOCALIZATION REQUIREMENTS (MANDATORY):
 ═══════════════════════════════════════════════════════════════
 
 1. LANGUAGE: Respond ENTIRELY in ${userLanguage}
-   - ALL text fields must be in ${userLanguage}
-   - Do NOT use English unless userLanguage is en-US or en-GB
+   - ALL text fields (summary, strengths, weaknesses, recommendations, descriptions, benefits) MUST be in ${userLanguage}
+   - Do NOT use English unless userLanguage is en-US, en-GB, en-CA, or en-AU
    
 2. E-COMMERCE: Suggest products available in ${userCountry}
-   - Prioritize these local sites: ${localEcommerce.slice(0, 3).join(', ')}
-   - Provide real product URLs from these sites when possible
-   - Use "where_to_buy" field to specify local retailers
+   - PRIORITIZE these local sites: ${localEcommerce.slice(0, 3).join(', ')}
+   - Use "where_to_buy" field to specify LOCAL retailers from the list above
+   - Provide product URLs from local e-commerce sites when possible
    
 3. CERTIFICATIONS: Include certifications relevant to ${userCountry}
-   - Use local/regional certifications when applicable
-   - Example: For BR use INMETRO, for EU use EU Ecolabel, for US use EPA Safer Choice
+   - For BR: INMETRO, Procel, FSC Brasil
+   - For EU countries: EU Ecolabel, FSC, Cradle to Cradle
+   - For US: EPA Safer Choice, Energy Star, USDA Organic, B Corp
+   - For MX/AR: FSC, Rainforest Alliance, Fair Trade
 
 ═══════════════════════════════════════════════════════════════
 PRODUCT TO ANALYZE:
 ═══════════════════════════════════════════════════════════════
 
 Product Name: ${productName}
-URL: ${productInfo.pageUrl}
-Category: ${category}
+Product Type: ${productType}
+Category: ${categoryData.name}
+URL: ${productInfo.pageUrl || 'N/A'}
+
+SUSTAINABILITY CRITERIA FOR THIS CATEGORY:
+${criteria}
+
+RELEVANT CERTIFICATIONS: ${categoryData.certifications.join(', ')}
+${productsText}
+
+═══════════════════════════════════════════════════════════════
+CRITICAL VALIDATION RULES:
+═══════════════════════════════════════════════════════════════
+
+1. Alternatives MUST be the SAME product type as the original
+2. You MUST provide at least 4 sustainable alternatives
+3. Each alternative must have sustainability_score >= 70
+4. Use REAL products from the search results when available
+5. If no real products found, suggest well-known sustainable brands
+
+SCORING GUIDELINES:
+- 70-100: Excellent sustainability (B-Corp, carbon neutral, circular economy)
+- 50-69: Good sustainability (some certifications, transparent supply chain)
+- 30-49: Average sustainability (basic eco claims, minimal transparency)
+- 10-29: Poor sustainability (greenwashing, no certifications)
 
 ═══════════════════════════════════════════════════════════════
 REQUIRED JSON RESPONSE FORMAT:
 ═══════════════════════════════════════════════════════════════
 
 {
-  "sustainability_score": <number 0-100>,
-  "summary": "<brief summary in ${userLanguage}>",
-  "strengths": ["<strength 1 in ${userLanguage}>", "<strength 2 in ${userLanguage}>"],
-  "weaknesses": ["<weakness 1 in ${userLanguage}>", "<weakness 2 in ${userLanguage}>"],
-  "recommendations": ["<recommendation 1 in ${userLanguage}>", "<recommendation 2 in ${userLanguage}>"],
+  "originalProduct": {
+    "name": "${productName}",
+    "category": "${category}",
+    "sustainability_score": <number 0-100>,
+    "summary": "<analysis in ${userLanguage}>",
+    "environmental_impact": {
+      "carbon_footprint": "<assessment>",
+      "water_usage": "<assessment>",
+      "recyclability": "<assessment>",
+      "toxicity": "<assessment>"
+    },
+    "strengths": ["<strength in ${userLanguage}>", "<strength in ${userLanguage}>"],
+    "weaknesses": ["<weakness in ${userLanguage}>", "<weakness in ${userLanguage}>"],
+    "certifications_found": ["<certifications>"],
+    "recommendations": ["<recommendation in ${userLanguage}>", "<recommendation in ${userLanguage}>"],
+  },
   "alternatives": [
     {
       "name": "<product name in ${userLanguage}>",
-      "description": "<description in ${userLanguage}>",
-      "sustainability_score": <number 0-100>,
-      "benefits": "<benefits in ${userLanguage}>",
-      "where_to_buy": "<prefer ${localEcommerce[0]} or similar>",
-      "product_url": "<actual URL from ${localEcommerce[0]} if available, or Google search URL>",
-      "certifications": ["<certification 1>", "<certification 2>"]
+      "description": "<clear description in ${userLanguage}>",
+      "benefits": "<why more sustainable, in ${userLanguage}>",
+      "sustainability_score": <number 70-100>,
+      "where_to_buy": "<prefer: ${localEcommerce[0]}, ${localEcommerce[1]}, or ${localEcommerce[2]}>",
+      "certifications": ["<relevant certifications>"],
+      "product_url": "<URL from local e-commerce if available>"
     }
   ]
 }
 
 ═══════════════════════════════════════════════════════════════
-EXAMPLES BY LANGUAGE:
+LOCALIZATION EXAMPLES:
 ═══════════════════════════════════════════════════════════════
 
-If userLanguage = "pt-BR" (Brazilian Portuguese):
-- summary: "Este produto tem baixo impacto ambiental devido..."
-- strengths: ["Uso de materiais recicláveis", "Certificação B Corp"]
-- where_to_buy: "Mercado Livre, Americanas"
+Example for userLanguage = "pt-BR", userCountry = "BR":
+{
+  "originalProduct": {
+    "summary": "Este produto descartável tem baixo impacto de sustentabilidade devido ao uso de plástico de uso único.",
+    "strengths": [],
+    "weaknesses": ["Plástico descartável de uso único", "Sem certificações ambientais"],
+    "recommendations": ["Considere copos reutilizáveis", "Busque alternativas compostáveis"]
+  },
+  "alternatives": [
+    {
+      "name": "Copos Compostáveis EcoPure",
+      "description": "Copos feitos de materiais biodegradáveis à base de plantas.",
+      "benefits": "Reduz resíduos plásticos e é compostável",
+      "where_to_buy": "Mercado Livre, Americanas",
+      "product_url": "https://mercadolivre.com.br/..."
+    }
+  ]
+}
 
-If userLanguage = "es-MX" (Mexican Spanish):
-- summary: "Este producto tiene bajo impacto ambiental debido..."
-- strengths: ["Uso de materiales reciclables", "Certificación B Corp"]
-- where_to_buy: "Mercado Libre, Amazon México"
-
-If userLanguage = "en-US" (US English):
-- summary: "This product has low environmental impact due to..."
-- strengths: ["Use of recyclable materials", "B Corp certification"]
-- where_to_buy: "Amazon, Walmart"
+Example for userLanguage = "en-US", userCountry = "US":
+{
+  "originalProduct": {
+    "summary": "This disposable product has low sustainability impact due to single-use plastic.",
+    "strengths": [],
+    "weaknesses": ["Single-use disposable plastic", "No environmental certifications"],
+    "recommendations": ["Consider reusable cups", "Look for compostable alternatives"]
+  },
+  "alternatives": [
+    {
+      "name": "EcoPure Compostable Cups",
+      "description": "Cups made from plant-based biodegradable materials.",
+      "benefits": "Reduces plastic waste and is compostable",
+      "where_to_buy": "Amazon, Walmart",
+      "product_url": "https://amazon.com/..."
+    }
+  ]
+}
 
 ═══════════════════════════════════════════════════════════════
-CRITICAL REMINDERS:
+FINAL REMINDERS:
 ═══════════════════════════════════════════════════════════════
 
-1. ALL text must be in ${userLanguage} - no exceptions
-2. Suggest 4 alternatives available in ${userCountry}
-3. Use real product URLs from ${localEcommerce[0]} when possible
-4. Return ONLY valid JSON (no markdown, no extra text)
+1. ALL TEXT FIELDS MUST BE IN ${userLanguage} - THIS IS CRITICAL
+2. PRIORITIZE LOCAL E-COMMERCE: ${localEcommerce[0]}, ${localEcommerce[1]}
+3. PROVIDE 4 ALTERNATIVES MINIMUM
+4. RETURN ONLY VALID JSON - NO MARKDOWN, NO COMMENTS
 
 Begin analysis now.`;
 
