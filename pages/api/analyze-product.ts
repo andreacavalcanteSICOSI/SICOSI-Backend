@@ -969,23 +969,41 @@ async function searchRealProducts(
   category: string,
   userCountry: string
 ): Promise<Array<{title: string, url: string, snippet: string}>> {
-  
+
   const countryNames: Record<string, string> = {
     'BR': 'Brazil', 'US': 'United States', 'UK': 'United Kingdom',
     'CA': 'Canada', 'AU': 'Australia', 'DE': 'Germany',
     'FR': 'France', 'ES': 'Spain', 'IT': 'Italy'
   };
-  
-  // Construir query mais específica baseada na categoria
-  let query: string;
 
-  if (category === 'digital_products_software' || category === 'cloud_services') {
-    // Para software, incluir "alternative to" + nome do produto principal
-    const mainProduct = (productName || '').split(' ')[0];
-    query = `sustainable ${productType} alternative to ${mainProduct} eco-friendly`;
+  // Construir query otimizada via Groq
+  const groqApiKey = process.env.GROQ_API_KEY;
+  const groqPrompt = `Generate a short e-commerce search query (max 6 words) to find sustainable/eco-friendly ${productType} in ${userCountry}. Return ONLY the query in the local language, nothing else.`;
+
+  let query = `sustainable ${productType} eco-friendly ${countryNames[userCountry] || userCountry}`;
+
+  if (groqApiKey) {
+    try {
+      const groq = new Groq({ apiKey: groqApiKey });
+      const completion = await groq.chat.completions.create({
+        messages: [
+          { role: 'system', content: 'You generate concise e-commerce search queries.' },
+          { role: 'user', content: groqPrompt }
+        ],
+        model: config.groq.defaultModel,
+        temperature: 0.2,
+        max_tokens: 30
+      });
+
+      const aiQuery = completion.choices?.[0]?.message?.content?.trim();
+      if (aiQuery) {
+        query = aiQuery;
+      }
+    } catch (error) {
+      console.log('⚠️ [SEARCH] Groq query generation failed, using fallback query', error);
+    }
   } else {
-    // Para produtos físicos, manter abordagem atual melhorada
-    query = `sustainable ${productType} eco-friendly certified brands buy`;
+    console.log('⚠️ [SEARCH] No GROQ_API_KEY, using fallback query');
   }
 
   console.log(`🔍 Web Search Query: ${query}`);
@@ -1002,7 +1020,7 @@ async function searchRealProducts(
       console.log('⚠️ [SEARCH] Few results, trying broader query...');
       query = `eco-friendly sustainable ${productType} shop`;
       console.log('🔎 [SEARCH] Query (broad):', query);
-      
+
       results = await webSearchClient.search(query, {
         maxResults: 50,
         searchDepth: 'advanced',
@@ -1014,7 +1032,6 @@ async function searchRealProducts(
       return [];
     }
 
-    // ✅ CORREÇÃO 5: FILTROS MAIS FLEXÍVEIS
     const rawResults = (results.results || []).filter(Boolean);
 
     const ecommerceDomains = [
@@ -1034,8 +1051,6 @@ async function searchRealProducts(
       'sustain', 'eco', 'organic', 'recycle', 'natural', 'fair trade',
       'ethical', 'green', 'bamboo', 'recycled'
     ];
-
-    const typeWords = (productType || '').toLowerCase().split(/\s+/);
 
     const validProducts = rawResults.filter(r => {
       const url = (r.url || '').toLowerCase();
@@ -1066,22 +1081,11 @@ async function searchRealProducts(
       const matchesEcommerce = ecommerceDomains.some(domain => host.includes(domain));
       const productSignal = productPatterns.some(p => url.includes(p)) || /\/[\w-]+-\d+/.test(url);
       const hasPrice = /\$|€|£|r\$|price|buy|shop|store|cart/.test(text);
-      const hasType = typeWords.some(word => {
-        if (!word) return false;
-        const singular = word.replace(/s$/, '');
-        const plural = word.endsWith('s') ? word : `${word}s`;
-        return text.includes(word) || text.includes(singular) || text.includes(plural) || url.includes(word);
-      });
       const isSustainable = sustainKeywords.some(kw => text.includes(kw)) ||
         categoryData.certifications.some(cert => {
           const certText = (cert || '').toLowerCase();
           return certText && text.includes(certText);
         });
-
-      if (!hasType) {
-        console.log(`🔍 [FILTER] Rejected: ${url} - Reason: missing product type keywords`);
-        return false;
-      }
 
       if (!(matchesEcommerce || productSignal || hasPrice)) {
         console.log(`🔍 [FILTER] Rejected: ${url} - Reason: not an e-commerce product page`);
@@ -1098,7 +1102,30 @@ async function searchRealProducts(
 
     console.log(`✅ [SEARCH] Filtered: ${validProducts.length}/${results.results.length}`);
 
-    const unique = Array.from(new Map(validProducts.map(p => [p.url, p])).values());
+    let unique = Array.from(new Map(validProducts.map(p => [p.url, p])).values());
+
+    // Fallback permissivo: se nada passou, pegar até 5 e-commerces conhecidos sem exigir sustentabilidade
+    if (unique.length === 0) {
+      console.log('⚠️ [SEARCH] No sustainable matches, applying ecommerce-only fallback');
+      const ecommerceOnly = rawResults.filter(r => {
+        const url = (r.url || '').toLowerCase();
+        if (!url) return false;
+
+        try {
+          const host = new URL(url).host.toLowerCase();
+          const isArticle = [
+            '/blog/', '/article/', '/news/', '/guide/', '/review', '/reviews',
+            'youtube.', 'wikipedia.', '/best-', '/top-'
+          ].some(p => url.includes(p));
+          return ecommerceDomains.some(domain => host.includes(domain)) && !isArticle;
+        } catch (_) {
+          return false;
+        }
+      });
+
+      unique = Array.from(new Map(ecommerceOnly.map(p => [p.url, p])).values()).slice(0, 5);
+    }
+
     const limited = unique.slice(0, 10);
 
     console.log(`✅ [SEARCH] Returning ${limited.length} products after dedupe/limit`);
