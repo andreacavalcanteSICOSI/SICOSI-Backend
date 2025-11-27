@@ -1,8 +1,8 @@
 {
-  "version": "4.0",
-  "description": "Comprehensive sustainability guidelines for product evaluation across all categories - SICOSI System - Brazilian Market Focus",
-  "lastUpdated": "2025-11-22",
-  "source": "Based on ISO standards, EU ESPR, EMBRAPA guidelines, Brazilian certifications, and global sustainability standards",
+  "version": "5.0",
+  "description": "Comprehensive sustainability guidelines for product evaluation across all categories - SICOSI System - Brazilian Market Focus. Updated with EU ESPR/DPP and expanded product categories.",
+  "lastUpdated": "2025-11-27",
+  "source": "Based on ISO standards, EU ESPR, EMBRAPA guidelines, Brazilian certifications, and global sustainability standards, ISSB, GPC (GS1)",
   "categories": {
     "electronics": {
       "name": "Electronics & IT Equipment",
@@ -42,7 +42,8 @@
             "Minimal use of adhesives",
             "Accessible repair manuals and documentation",
             "Repairability score > 7/10 (iFixit standard)",
-            "Replaceable battery and key components"
+            "Replaceable battery and key components",
+            "Right to Repair compliance (EU)"
           ]
         },
         "recyclability": {
@@ -90,7 +91,8 @@
         "ISO 14001",
         "ESPR",
         "WEEE Directive",
-        "RoHS Directive"
+        "RoHS Directive",
+        "EU Digital Product Passport (DPP)"
       ],
       "brazilian_brands": [
         "Positivo (notebooks)",
@@ -376,7 +378,8 @@
             "Sustainable sourcing (BCI cotton, FSC viscose)",
             "Biodegradable or recyclable materials",
             "Natural fibers preferred over synthetic",
-            "Brazilian organic cotton"
+            "Brazilian organic cotton",
+            "Digital Product Passport (DPP) compliance"
           ]
         },
         "production": {
@@ -431,7 +434,8 @@
       "references": [
         "ESPR textile ban",
         "ISO 14001",
-        "SA8000"
+        "SA8000",
+        "EU Strategy for Sustainable and Circular Textiles"
       ],
       "brazilian_brands": [
         "Osklen",
@@ -1621,7 +1625,8 @@
         "perfume",
         "deodorant",
         "toothpaste",
-        "skincare"
+        "skincare",
+        "cotton swab"
       ],
       "sustainability_criteria": {
         "ingredients": {
@@ -5515,6 +5520,159 @@
           "circular produit"
         ]
       }
+    },
+    "basic_metals": {
+      "name": "Basic Metals (Iron, Steel, Aluminum)",
+      "keywords": [
+        "iron",
+        "steel",
+        "aluminum",
+        "metal",
+        "liga",
+        "ferro",
+        "aço",
+        "alumínio"
+      ],
+      "sustainability_criteria": {
+        "carbon_footprint": {
+          "weight": 0.4,
+          "guidelines": [
+            "Low-carbon production methods (e.g., green hydrogen, electric arc furnace)",
+            "Emissions transparency (Scope 1, 2, and 3)",
+            "Use of Carbon Capture and Storage (CCS) technologies",
+            "Compliance with EU Carbon Border Adjustment Mechanism (CBAM)"
+          ]
+        },
+        "recycled_content": {
+          "weight": 0.3,
+          "guidelines": [
+            "Recycled content > 70%",
+            "Traceability of scrap metal sources",
+            "Use of secondary raw materials"
+          ]
+        },
+        "water_stewardship": {
+          "weight": 0.15,
+          "guidelines": [
+            "Reduced water consumption in cooling and processing",
+            "Closed-loop water systems",
+            "Responsible discharge of wastewater"
+          ]
+        },
+        "social_governance": {
+          "weight": 0.15,
+          "guidelines": [
+            "Ethical sourcing of raw materials (e.g., iron ore, bauxite)",
+            "Fair labor practices in mining and processing",
+            "Community engagement and impact assessment"
+          ]
+        }
+      },
+      "certifications": [
+        "ResponsibleSteel",
+        "Aluminium Stewardship Initiative (ASI)",
+        "ISO 14001"
+      ],
+      "references": [
+        "EU Digital Product Passport (DPP)",
+        "CBAM",
+        "Global Reporting Initiative (GRI)"
+      ],
+      "brazilian_brands": [
+        "Vale",
+        "Gerdau",
+        "CSN",
+        "Alcoa Brasil"
+      ],
+      "product_types": [
+        "lingote",
+        "chapa",
+        "vergalhão",
+        "perfil",
+        "fio",
+        "tubo"
+      ],
+      "exclusion_keywords": [
+        "food",
+        "textile",
+        "electronic",
+        "service"
+      ],
+      "keyword_synonyms": {}
+    },
+    "tyres": {
+      "name": "Tyres",
+      "keywords": [
+        "pneu",
+        "tire",
+        "pneus",
+        "tires",
+        "borracha",
+        "rodas"
+      ],
+      "sustainability_criteria": {
+        "materials": {
+          "weight": 0.35,
+          "guidelines": [
+            "Use of sustainable natural rubber (FSC or PEFC certified)",
+            "Recycled content (e.g., carbon black from end-of-life tires)",
+            "Absence of harmful substances (e.g., high-aromatic oils)",
+            "Use of bio-based or renewable materials"
+          ]
+        },
+        "durability_performance": {
+          "weight": 0.3,
+          "guidelines": [
+            "High mileage and long lifespan",
+            "Low rolling resistance (improves vehicle fuel efficiency)",
+            "Retreadability and repairability features",
+            "Wet grip performance (safety)"
+          ]
+        },
+        "end_of_life": {
+          "weight": 0.25,
+          "guidelines": [
+            "Manufacturer take-back scheme for end-of-life tires (ELT)",
+            "High recyclability rate",
+            "Support for material recovery and energy recovery"
+          ]
+        },
+        "production_transparency": {
+          "weight": 0.1,
+          "guidelines": [
+            "Energy-efficient manufacturing process",
+            "Water stewardship in production",
+            "Digital Product Passport (DPP) compliance"
+          ]
+        }
+      },
+      "certifications": [
+        "EU Tyre Label",
+        "FSC/PEFC for natural rubber",
+        "ISO 14001"
+      ],
+      "references": [
+        "EU Digital Product Passport (DPP)",
+        "ELT Directive"
+      ],
+      "brazilian_brands": [
+        "Pirelli Brasil",
+        "Michelin Brasil",
+        "Goodyear Brasil"
+      ],
+      "product_types": [
+        "pneu de carro",
+        "pneu de caminhão",
+        "pneu de bicicleta",
+        "pneu agrícola"
+      ],
+      "exclusion_keywords": [
+        "food",
+        "textile",
+        "electronic",
+        "service"
+      ],
+      "keyword_synonyms": {}
     }
   },
   "general_sustainability_principles": {
@@ -5552,7 +5710,8 @@
       "Digital Product Passports (DPP)",
       "Public sustainability reporting",
       "Blockchain traceability",
-      "Open data initiatives"
+      "Open data initiatives",
+      "Digital Product Passport (DPP) compliance (for relevant categories)"
     ],
     "biodiversity": [
       "No deforestation",
