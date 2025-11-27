@@ -343,7 +343,7 @@ interface Alternative {
   sustainability_score: number;
   where_to_buy: string;
   certifications: string[];
-  product_url?: string;
+  product_url?: string | null;
 }
 
 interface GroqAnalysisResult {
@@ -1224,6 +1224,27 @@ function categorizeProduct(productName: string, productType: string): string {
   throw new Error('Use identifyCategory() instead');
 }
 
+function validateAlternativeUrls(
+  alternatives: Alternative[] = [],
+  realProducts: Array<{ title: string; url: string; snippet: string }> = []
+): Alternative[] {
+  const realUrls = new Set(
+    realProducts
+      .filter((p) => p && typeof p.url === 'string' && p.url.trim().length > 0)
+      .map((p) => p.url.trim())
+  );
+
+  return alternatives.map((alternative) => {
+    const url = alternative?.product_url?.trim();
+    const isRealUrl = url ? realUrls.has(url) : false;
+
+    return {
+      ...alternative,
+      product_url: isRealUrl ? url! : null
+    };
+  });
+}
+
 // ===== ANALISAR COM GROQ (CORRIGIDO) =====
 async function analyzeWithGroq(
   productInfo: ProductInfo,
@@ -1351,6 +1372,17 @@ RELEVANT CERTIFICATIONS: ${categoryData.certifications.join(', ')}
 ${productsText}
 
 ═══════════════════════════════════════════════════════════════
+CRITICAL URL RULES:
+════════════════════════════════════════════════════════════════
+
+- ONLY use URLs from the REAL PRODUCTS FOUND list above
+- If suggesting a product not in the list, set product_url to null
+- NEVER invent or guess URLs
+- NEVER create URLs based on product names
+- Invalid example: "mercadolivre.com.br/produto-nome" (WRONG - invented)
+- Valid example: Use exact URL from search results or null
+
+═══════════════════════════════════════════════════════════════
 CRITICAL VALIDATION RULES:
 ═══════════════════════════════════════════════════════════════
 
@@ -1395,7 +1427,7 @@ REQUIRED JSON RESPONSE FORMAT:
       "sustainability_score": <number 70-100>,
       "where_to_buy": "<prefer: ${localEcommerce[0]}, ${localEcommerce[1]}, or ${localEcommerce[2]}>",
       "certifications": ["<relevant certifications>"],
-      "product_url": "<URL from local e-commerce if available>"
+      "product_url": "<URL from local e-commerce if available, else null>"
     }
   ]
 }
@@ -1428,8 +1460,13 @@ Begin analysis now.`;
 
     const result = JSON.parse(content) as GroqAnalysisResult;
 
-    if (result.alternatives) {
-      result.alternatives = result.alternatives.filter(alt => {
+    const validatedAlternatives = validateAlternativeUrls(
+      result.alternatives || [],
+      validProducts
+    );
+
+    if (validatedAlternatives) {
+      result.alternatives = validatedAlternatives.filter(alt => {
         if (!alt || !alt.name) {
           return false;
         }
