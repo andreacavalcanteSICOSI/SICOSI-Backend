@@ -6,6 +6,88 @@ import alternativesData from '../../data/alternatives.json';
 import config from '../../config';
 import webSearchClient from '../../services/web-search-client';
 
+// In-memory cache for analysis results
+// Key: productName + userCountry
+// Value: { result, timestamp }
+const analysisCache = new Map<string, {
+  result: GroqAnalysisResult;
+  timestamp: number;
+  expiresAt: number;
+}>();
+
+// Cache duration: 24 hours
+const CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
+
+// Generate cache key
+function getCacheKey(productName: string, userCountry: string): string {
+  // Normalize product name (lowercase, trim, remove extra spaces)
+  const normalized = productName.toLowerCase().trim().replace(/\s+/g, ' ');
+  return `${normalized}:${userCountry}`;
+}
+
+// Get from cache
+function getCachedAnalysis(productName: string, userCountry: string): GroqAnalysisResult | null {
+  const key = getCacheKey(productName, userCountry);
+  const cached = analysisCache.get(key);
+
+  if (!cached) {
+    console.log('📭 [CACHE] Miss:', key.substring(0, 50));
+    return null;
+  }
+
+  // Check if expired
+  const now = Date.now();
+  if (now > cached.expiresAt) {
+    console.log('⏰ [CACHE] Expired:', key.substring(0, 50));
+    analysisCache.delete(key);
+    return null;
+  }
+
+  const remainingHours = Math.round((cached.expiresAt - now) / (60 * 60 * 1000));
+  console.log(`✅ [CACHE] Hit: ${key.substring(0, 50)} (expires in ${remainingHours}h)`);
+
+  return cached.result;
+}
+
+// Save to cache
+function setCachedAnalysis(
+  productName: string,
+  userCountry: string,
+  result: GroqAnalysisResult
+): void {
+  const key = getCacheKey(productName, userCountry);
+  const now = Date.now();
+
+  analysisCache.set(key, {
+    result,
+    timestamp: now,
+    expiresAt: now + CACHE_DURATION_MS
+  });
+
+  console.log(`💾 [CACHE] Saved: ${key.substring(0, 50)} (expires in 24h)`);
+  console.log(`📊 [CACHE] Total entries: ${analysisCache.size}`);
+}
+
+// Clean expired entries periodically
+function cleanExpiredCache(): void {
+  const now = Date.now();
+  let cleaned = 0;
+
+  for (const [key, value] of analysisCache.entries()) {
+    if (now > value.expiresAt) {
+      analysisCache.delete(key);
+      cleaned++;
+    }
+  }
+
+  if (cleaned > 0) {
+    console.log(`🧹 [CACHE] Cleaned ${cleaned} expired entries`);
+  }
+}
+
+// Clean cache every hour
+setInterval(cleanExpiredCache, 60 * 60 * 1000);
+
 /**
  * Map ISO country code to language/locale
  * @param {string} countryCode - ISO 3166-1 alpha-2 country code
@@ -323,6 +405,10 @@ interface AnalysisResponse {
   alternatives?: Alternative[];
   timestamp?: string;
   error?: string;
+  _meta?: {
+    cached: boolean;
+    cacheSize: number;
+  };
 }
 
 // Cast seguro para o JSON
@@ -754,7 +840,7 @@ export default async function handler(
 
     productInfo.userCountry = productInfo.userCountry || rawUserCountry;
 
-    // Cross-validate country using domain + product name
+    // Cross-validate country (não usa Groq, pode ficar aqui)
     const userCountry = validateAndCorrectCountry(
       productInfo.userCountry,
       productInfo.pageUrl,
@@ -762,7 +848,6 @@ export default async function handler(
     );
 
     productInfo.userCountry = userCountry;
-
     console.log('🌍 [COUNTRY] Validated country:', userCountry);
 
     const productName = productInfo.productName || productInfo.product_name;
@@ -770,15 +855,50 @@ export default async function handler(
       return res.status(400).json({ success: false, error: 'productName is required' });
     }
 
-    // ✅ LOGGING MELHORADO
     console.log('📥 [ANALYZE] Request received:', {
       productName: productName,
       pageUrl: productInfo.pageUrl,
-      userCountry: productInfo.userCountry || userCountry || 'N/A',
+      userCountry: userCountry,
       timestamp: new Date().toISOString()
     });
 
-    // 1. IDENTIFICAR CATEGORIA
+    // ════════════════════════════════════════════════════════════
+    // ✅ STEP 1: CHECK CACHE FIRST (ANTES DE QUALQUER GROQ!)
+    // ════════════════════════════════════════════════════════════
+    console.log('🔍 [CACHE] Checking cache BEFORE any Groq calls...');
+
+    const cachedAnalysis = getCachedAnalysis(productName, userCountry);
+
+    if (cachedAnalysis) {
+      console.log('🚀 [CACHE] HIT! Returning cached result (0 tokens, 0 API calls)');
+
+      // Retorna imediatamente sem chamar Groq
+      return res.status(200).json({
+        success: true,
+        productInfo: {
+          productName: productName,
+          pageUrl: productInfo.pageUrl || '',
+          pageTitle: productInfo.pageTitle || '',
+          selectedText: productInfo.selectedText || ''
+        },
+        category: cachedAnalysis.originalProduct.category,
+        originalProduct: cachedAnalysis.originalProduct,
+        alternatives: cachedAnalysis.alternatives,
+        timestamp: new Date().toISOString(),
+        _meta: {
+          cached: true,
+          cacheSize: analysisCache.size,
+          tokensUsed: 0,
+          tokensSaved: '~2800'
+        }
+      });
+    }
+
+    console.log('📭 [CACHE] MISS - Proceeding with full analysis...');
+
+    // ════════════════════════════════════════════════════════════
+    // STEP 2: IDENTIFICAR CATEGORIA (só executa se cache miss)
+    // ════════════════════════════════════════════════════════════
     const category = await identifyCategory(productInfo);
     console.log('📂 [CATEGORY] Identified:', category);
 
@@ -789,17 +909,26 @@ export default async function handler(
       return res.status(400).json({ success: false, error: `Category not found: ${category}` });
     }
 
-    // 2. BUSCAR PRODUTOS REAIS
+    // ════════════════════════════════════════════════════════════
+    // STEP 3: TRADUZIR E DETECTAR TIPO (só executa se cache miss)
+    // ════════════════════════════════════════════════════════════
     console.log('🔍 [SEARCH] Searching sustainable alternatives...');
-    
+
     const translatedName = await translateProductName(productName);
-    const productType = await detectProductType(translatedName, productInfo.pageTitle || '', categoryData.name);
+    const productType = await detectProductType(
+      translatedName,
+      productInfo.pageTitle || '',
+      categoryData.name
+    );
 
     console.log('🏷️ [TYPE] Detected:', {
       productType: productType,
       translatedName: translatedName
     });
-    
+
+    // ════════════════════════════════════════════════════════════
+    // STEP 4: BUSCAR PRODUTOS REAIS (não usa Groq)
+    // ════════════════════════════════════════════════════════════
     const realProducts = await searchRealProducts(
       productName,
       productType,
@@ -810,12 +939,11 @@ export default async function handler(
 
     console.log(`✅ [SEARCH] Found ${realProducts.length} products`);
 
-    console.log('📦 Product Name:', productName);
-    console.log('🏷️ Detected Type:', productType);
-    console.log('📁 Category:', categoryData.name);
-    console.log('🔍 Search Results Count:', realProducts.length);
+    // ════════════════════════════════════════════════════════════
+    // STEP 5: ANALISAR COM GROQ (só executa se cache miss)
+    // ════════════════════════════════════════════════════════════
+    console.log('📡 [GROQ] Analyzing product...');
 
-    // 3. ANALISAR COM GROQ
     const analysis = await analyzeWithGroq(
       productInfo,
       category,
@@ -825,18 +953,19 @@ export default async function handler(
       userCountry
     );
 
-    console.log('🤖 [GROQ] Analysis complete:', {
-      originalScore: analysis.originalProduct.sustainability_score,
-      alternativesCount: analysis.alternatives.length,
-      averageScore: analysis.alternatives.length > 0
-        ? Math.round(analysis.alternatives.reduce((sum, a) => sum + a.sustainability_score, 0) / analysis.alternatives.length)
-        : 0
-    });
+    if (!analysis) {
+      throw new Error('Failed to generate analysis');
+    }
 
-    console.log('🎯 Final Score:', analysis.originalProduct.sustainability_score);
-    console.log('💡 Alternatives:', analysis.alternatives);
+    // ════════════════════════════════════════════════════════════
+    // STEP 6: SALVAR NO CACHE
+    // ════════════════════════════════════════════════════════════
+    setCachedAnalysis(productName, userCountry, analysis);
+    console.log('💾 [CACHE] Analysis saved to cache');
 
-    // ✅ CORREÇÃO 1: ESTRUTURA DE RESPOSTA COMPLETA
+    // ════════════════════════════════════════════════════════════
+    // STEP 7: RETORNAR RESULTADO
+    // ════════════════════════════════════════════════════════════
     const response: AnalysisResponse = {
       success: true,
       productInfo: {
@@ -848,7 +977,12 @@ export default async function handler(
       category: category,
       originalProduct: analysis.originalProduct,
       alternatives: analysis.alternatives,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      _meta: {
+        cached: false,
+        cacheSize: analysisCache.size,
+        tokensUsed: '~2800'
+      }
     };
 
     console.log('📤 [ANALYZE] Response sent:', {
