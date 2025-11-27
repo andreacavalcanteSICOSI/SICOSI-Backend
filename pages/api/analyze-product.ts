@@ -6,6 +6,88 @@ import alternativesData from '../../data/alternatives.json';
 import config from '../../config';
 import webSearchClient from '../../services/web-search-client';
 
+// In-memory cache for analysis results
+// Key: productName + userCountry
+// Value: { result, timestamp }
+const analysisCache = new Map<string, {
+  result: GroqAnalysisResult;
+  timestamp: number;
+  expiresAt: number;
+}>();
+
+// Cache duration: 24 hours
+const CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
+
+// Generate cache key
+function getCacheKey(productName: string, userCountry: string): string {
+  // Normalize product name (lowercase, trim, remove extra spaces)
+  const normalized = productName.toLowerCase().trim().replace(/\s+/g, ' ');
+  return `${normalized}:${userCountry}`;
+}
+
+// Get from cache
+function getCachedAnalysis(productName: string, userCountry: string): GroqAnalysisResult | null {
+  const key = getCacheKey(productName, userCountry);
+  const cached = analysisCache.get(key);
+
+  if (!cached) {
+    console.log('📭 [CACHE] Miss:', key.substring(0, 50));
+    return null;
+  }
+
+  // Check if expired
+  const now = Date.now();
+  if (now > cached.expiresAt) {
+    console.log('⏰ [CACHE] Expired:', key.substring(0, 50));
+    analysisCache.delete(key);
+    return null;
+  }
+
+  const remainingHours = Math.round((cached.expiresAt - now) / (60 * 60 * 1000));
+  console.log(`✅ [CACHE] Hit: ${key.substring(0, 50)} (expires in ${remainingHours}h)`);
+
+  return cached.result;
+}
+
+// Save to cache
+function setCachedAnalysis(
+  productName: string,
+  userCountry: string,
+  result: GroqAnalysisResult
+): void {
+  const key = getCacheKey(productName, userCountry);
+  const now = Date.now();
+
+  analysisCache.set(key, {
+    result,
+    timestamp: now,
+    expiresAt: now + CACHE_DURATION_MS
+  });
+
+  console.log(`💾 [CACHE] Saved: ${key.substring(0, 50)} (expires in 24h)`);
+  console.log(`📊 [CACHE] Total entries: ${analysisCache.size}`);
+}
+
+// Clean expired entries periodically
+function cleanExpiredCache(): void {
+  const now = Date.now();
+  let cleaned = 0;
+
+  for (const [key, value] of analysisCache.entries()) {
+    if (now > value.expiresAt) {
+      analysisCache.delete(key);
+      cleaned++;
+    }
+  }
+
+  if (cleaned > 0) {
+    console.log(`🧹 [CACHE] Cleaned ${cleaned} expired entries`);
+  }
+}
+
+// Clean cache every hour
+setInterval(cleanExpiredCache, 60 * 60 * 1000);
+
 /**
  * Map ISO country code to language/locale
  * @param {string} countryCode - ISO 3166-1 alpha-2 country code
@@ -323,6 +405,10 @@ interface AnalysisResponse {
   alternatives?: Alternative[];
   timestamp?: string;
   error?: string;
+  _meta?: {
+    cached: boolean;
+    cacheSize: number;
+  };
 }
 
 // Cast seguro para o JSON
@@ -815,15 +901,32 @@ export default async function handler(
     console.log('📁 Category:', categoryData.name);
     console.log('🔍 Search Results Count:', realProducts.length);
 
-    // 3. ANALISAR COM GROQ
-    const analysis = await analyzeWithGroq(
-      productInfo,
-      category,
-      categoryData,
-      productType,
-      realProducts,
-      userCountry
-    );
+    // 3. CHECK CACHE FIRST
+    let analysis = getCachedAnalysis(productName, userCountry);
+    const fromCache = Boolean(analysis);
+
+    if (analysis) {
+      console.log('🚀 [CACHE] Using cached analysis (0 tokens used)');
+    } else {
+      // CACHE MISS - Analyze with Groq
+      console.log('📡 [GROQ] Cache miss, analyzing product...');
+
+      analysis = await analyzeWithGroq(
+        productInfo,
+        category,
+        categoryData,
+        productType,
+        realProducts,
+        userCountry
+      );
+
+      // Save to cache
+      setCachedAnalysis(productName, userCountry, analysis);
+    }
+
+    if (!analysis) {
+      throw new Error('Failed to generate analysis');
+    }
 
     console.log('🤖 [GROQ] Analysis complete:', {
       originalScore: analysis.originalProduct.sustainability_score,
@@ -848,7 +951,11 @@ export default async function handler(
       category: category,
       originalProduct: analysis.originalProduct,
       alternatives: analysis.alternatives,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      _meta: {
+        cached: fromCache,
+        cacheSize: analysisCache.size
+      }
     };
 
     console.log('📤 [ANALYZE] Response sent:', {
