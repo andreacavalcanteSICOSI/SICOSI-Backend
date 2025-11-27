@@ -1403,6 +1403,37 @@ DYNAMIC LOCALIZATION (CRITICAL):
    - Research what certifications are used in this country
 
 ═══════════════════════════════════════════════════════════════
+SCORING METHODOLOGY (MANDATORY):
+═══════════════════════════════════════════════════════════════
+
+You MUST calculate sustainability_score using weighted average of criteria scores.
+
+STEP 1 - Analyze the product name for material indicators:
+Look for keywords that indicate sustainable materials:
+- Natural fibers: bamboo, bambu, linen, linho, hemp, cânhamo, cotton, algodão
+- Organic: organic, orgânico, orgânica, bio
+- Recycled: recycled, reciclado, reciclada, upcycled
+
+If found, the "materials" criterion should score HIGH (75-95).
+
+STEP 2 - Score each criterion (0-100):
+For each criterion in the category, evaluate based on:
+- Evidence of compliance with guidelines: 70-100
+- Sustainable material in product name (for materials criterion): 75-95
+- No information available: 50 (neutral, NOT zero)
+- Evidence of non-compliance: 0-30
+
+STEP 3 - Calculate weighted score:
+Final score = sum of (criterion_score × criterion_weight) for all criteria
+
+STEP 4 - Validate your score:
+- Product with sustainable material in name + no negative indicators = minimum 55
+- Product with certified sustainable material = minimum 70
+- Product with synthetic/conventional materials = maximum 50
+
+CRITICAL: The product name "${productName}" - analyze it for material keywords BEFORE scoring.
+
+═══════════════════════════════════════════════════════════════
 EXAMPLES:
 ═══════════════════════════════════════════════════════════════
 
@@ -1475,12 +1506,6 @@ CRITICAL VALIDATION RULES:
 3. Each alternative must have sustainability_score >= 70
 4. Use REAL products from the search results when available
 5. If no real products found, suggest well-known sustainable brands
-
-SCORING GUIDELINES:
-- 70-100: Excellent sustainability (B-Corp, carbon neutral, circular economy)
-- 50-69: Good sustainability (some certifications, transparent supply chain)
-- 30-49: Average sustainability (basic eco claims, minimal transparency)
-- 10-29: Poor sustainability (greenwashing, no certifications)
 
 ═══════════════════════════════════════════════════════════════
 REQUIRED JSON RESPONSE FORMAT:
