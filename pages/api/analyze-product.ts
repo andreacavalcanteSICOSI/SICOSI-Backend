@@ -343,7 +343,7 @@ interface Alternative {
   sustainability_score: number;
   where_to_buy: string;
   certifications: string[];
-  product_url?: string;
+  product_url?: string | null;
 }
 
 interface GroqAnalysisResult {
@@ -1016,57 +1016,94 @@ async function searchRealProducts(
 
     // ✅ CORREÇÃO 5: FILTROS MAIS FLEXÍVEIS
     const rawResults = (results.results || []).filter(Boolean);
+
+    const ecommerceDomains = [
+      'mercadolivre.com', 'amazon.com', 'amazon.com.br', 'magazineluiza.com',
+      'americanas.com', 'shopee.com', 'shopee.com.br', 'walmart.com',
+      'target.com', 'ebay.com', 'bestbuy.com', 'coppel.com', 'liverpool.com.mx',
+      'aliexpress.com', 'kabum.com', 'submarino.com', 'carrefour', 'allegro',
+      'rakuten', 'falabella', 'leroymerlin', 'decathlon'
+    ];
+
+    const productPatterns = [
+      '/dp/', '/product/', '/p/', '/item/', '/listing/', '/products/',
+      '-p-', '/buy/', '/shop/', '/c/', '/categoria/'
+    ];
+
+    const sustainKeywords = [
+      'sustain', 'eco', 'organic', 'recycle', 'natural', 'fair trade',
+      'ethical', 'green', 'bamboo', 'recycled'
+    ];
+
+    const typeWords = (productType || '').toLowerCase().split(/\s+/);
+
     const validProducts = rawResults.filter(r => {
       const url = (r.url || '').toLowerCase();
       const text = `${r.title || ''} ${r.snippet || ''}`.toLowerCase();
-      
-      // Padrão de produto (mais flexível)
-      const productPatterns = [
-        '/dp/', '/product/', '/p/', '/item/', '/listing/', '/products/',
-        '-p-', '/buy/', '/shop/'
-      ];
-      const isProduct = productPatterns.some(p => url.includes(p)) || 
-                       /\/[\w-]+-\d+/.test(url); // Padrão "nome-produto-123"
-      
-      // Não deve ser artigo
+
+      if (!url) {
+        console.log(`🔍 [FILTER] Rejected: (missing url) - Reason: missing URL`);
+        return false;
+      }
+
+      let host = '';
+      try {
+        host = new URL(url).host.toLowerCase();
+      } catch (_) {
+        console.log(`🔍 [FILTER] Rejected: ${url} - Reason: invalid URL`);
+        return false;
+      }
+
       const isArticle = [
-        '/blog/', '/article/', '/news/', '/guide/', '/review', 
+        '/blog/', '/article/', '/news/', '/guide/', '/review', '/reviews',
         'youtube.', 'wikipedia.', '/best-', '/top-'
       ].some(p => url.includes(p));
-      
-      // Deve ter keyword sustentável (mais flexível)
-      const sustainKeywords = [
-        'sustain', 'eco', 'organic', 'recycle', 'natural',
-        'fair trade', 'ethical', 'green'
-      ];
-      const isSustainable = sustainKeywords.some(kw => text.includes(kw)) ||
-                           categoryData.certifications.some(cert => {
-                             const certText = (cert || '').toLowerCase();
-                             return text.includes(certText);
-                           });
-      
-      // Deve ter o tipo de produto (normalizado para plural/singular)
-      const typeWords = (productType || '').toLowerCase().split(/\s+/);
+      if (isArticle) {
+        console.log(`🔍 [FILTER] Rejected: ${url} - Reason: article/guide`);
+        return false;
+      }
+
+      const matchesEcommerce = ecommerceDomains.some(domain => host.includes(domain));
+      const productSignal = productPatterns.some(p => url.includes(p)) || /\/[\w-]+-\d+/.test(url);
+      const hasPrice = /\$|€|£|r\$|price|buy|shop|store|cart/.test(text);
       const hasType = typeWords.some(word => {
+        if (!word) return false;
         const singular = word.replace(/s$/, '');
-        const plural = word + (word.endsWith('s') ? '' : 's');
-        return text.includes(word) || text.includes(singular) || text.includes(plural);
+        const plural = word.endsWith('s') ? word : `${word}s`;
+        return text.includes(word) || text.includes(singular) || text.includes(plural) || url.includes(word);
       });
-      
-      // Deve parecer e-commerce
-      const hasPrice = /\$|€|£|R\$|price|buy|shop|store|cart/.test(text);
-      
-      return isProduct && !isArticle && isSustainable && hasType && hasPrice;
+      const isSustainable = sustainKeywords.some(kw => text.includes(kw)) ||
+        categoryData.certifications.some(cert => {
+          const certText = (cert || '').toLowerCase();
+          return certText && text.includes(certText);
+        });
+
+      if (!hasType) {
+        console.log(`🔍 [FILTER] Rejected: ${url} - Reason: missing product type keywords`);
+        return false;
+      }
+
+      if (!(matchesEcommerce || productSignal || hasPrice)) {
+        console.log(`🔍 [FILTER] Rejected: ${url} - Reason: not an e-commerce product page`);
+        return false;
+      }
+
+      if (!isSustainable) {
+        console.log(`🔍 [FILTER] Rejected: ${url} - Reason: lacks sustainability keywords`);
+        return false;
+      }
+
+      return true;
     });
 
     console.log(`✅ [SEARCH] Filtered: ${validProducts.length}/${results.results.length}`);
 
-    // Remover duplicatas
-    const unique = Array.from(
-      new Map(validProducts.map(p => [p.url, p])).values()
-    ).slice(0, 15);
+    const unique = Array.from(new Map(validProducts.map(p => [p.url, p])).values());
+    const limited = unique.slice(0, 10);
 
-    return unique.map(r => ({
+    console.log(`✅ [SEARCH] Returning ${limited.length} products after dedupe/limit`);
+
+    return limited.map(r => ({
       title: r.title || 'Untitled Product',
       url: r.url || '',
       snippet: r.snippet || 'No description available'
@@ -1224,6 +1261,27 @@ function categorizeProduct(productName: string, productType: string): string {
   throw new Error('Use identifyCategory() instead');
 }
 
+function validateAlternativeUrls(
+  alternatives: Alternative[] = [],
+  realProducts: Array<{ title: string; url: string; snippet: string }> = []
+): Alternative[] {
+  const realUrls = new Set(
+    realProducts
+      .filter((p) => p && typeof p.url === 'string' && p.url.trim().length > 0)
+      .map((p) => p.url.trim())
+  );
+
+  return alternatives.map((alternative) => {
+    const url = alternative?.product_url?.trim();
+    const isRealUrl = url ? realUrls.has(url) : false;
+
+    return {
+      ...alternative,
+      product_url: isRealUrl ? url! : null
+    };
+  });
+}
+
 // ===== ANALISAR COM GROQ (CORRIGIDO) =====
 async function analyzeWithGroq(
   productInfo: ProductInfo,
@@ -1351,6 +1409,17 @@ RELEVANT CERTIFICATIONS: ${categoryData.certifications.join(', ')}
 ${productsText}
 
 ═══════════════════════════════════════════════════════════════
+CRITICAL URL RULES:
+════════════════════════════════════════════════════════════════
+
+- ONLY use URLs from the REAL PRODUCTS FOUND list above
+- If suggesting a product not in the list, set product_url to null
+- NEVER invent or guess URLs
+- NEVER create URLs based on product names
+- Invalid example: "mercadolivre.com.br/produto-nome" (WRONG - invented)
+- Valid example: Use exact URL from search results or null
+
+═══════════════════════════════════════════════════════════════
 CRITICAL VALIDATION RULES:
 ═══════════════════════════════════════════════════════════════
 
@@ -1395,7 +1464,7 @@ REQUIRED JSON RESPONSE FORMAT:
       "sustainability_score": <number 70-100>,
       "where_to_buy": "<prefer: ${localEcommerce[0]}, ${localEcommerce[1]}, or ${localEcommerce[2]}>",
       "certifications": ["<relevant certifications>"],
-      "product_url": "<URL from local e-commerce if available>"
+      "product_url": "<URL from local e-commerce if available, else null>"
     }
   ]
 }
@@ -1428,8 +1497,13 @@ Begin analysis now.`;
 
     const result = JSON.parse(content) as GroqAnalysisResult;
 
-    if (result.alternatives) {
-      result.alternatives = result.alternatives.filter(alt => {
+    const validatedAlternatives = validateAlternativeUrls(
+      result.alternatives || [],
+      validProducts
+    );
+
+    if (validatedAlternatives) {
+      result.alternatives = validatedAlternatives.filter(alt => {
         if (!alt || !alt.name) {
           return false;
         }
