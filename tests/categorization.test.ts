@@ -38,11 +38,11 @@ const testCases = [
 async function runTests() {
   for (const test of testCases) {
     try {
-      const context = `${test.input.pageTitle} ${test.input.description || ''}`.trim();
-      const result = await identifyCategory(
-        test.input.productName,
-        context,
-      );
+      const result = await identifyCategory({
+        productName: test.input.productName,
+        pageTitle: test.input.pageTitle,
+        description: test.input.description,
+      });
       const passed = result === test.expected;
       console.log(`${passed ? '✅' : '❌'} ${test.name}: ${result} (expected: ${test.expected})`);
     } catch (error) {

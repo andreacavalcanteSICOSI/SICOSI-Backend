@@ -5928,5 +5928,33 @@
     "lowercase": true,
     "remove_punctuation": true,
     "word_boundary_matching": true
+  },
+  "Web Search_config": {
+    "ecommerce_domains": [
+      "mercadolivre.com", "amazon.com", "amazon.com.br", "magazineluiza.com",
+      "americanas.com", "shopee.com", "shopee.com.br", "walmart.com",
+      "target.com", "ebay.com", "bestbuy.com", "coppel.com", "liverpool.com.mx",
+      "aliexpress.com", "kabum.com", "submarino.com", "carrefour", "allegro",
+      "rakuten", "falabella", "leroymerlin", "decathlon"
+    ],
+    "ecommerce_url_signals": [
+      "/dp/", "/product/", "/products/", "/produto/", "/p/", "/item/", "/listing/",
+      "/buy/", "/shop/", "/loja/", "/store/", "/collections/", "/categoria/", "/category/",
+      "/tenis", "/sapato", "/calcado", "/calçado"
+    ],
+    "ecommerce_text_signals": [
+      "comprar", "buy", "shop", "loja", "store", "carrinho", "cart", "frete", "entrega", "parcelamento"
+    ],
+    "sustainability_keywords": [
+      "sustain", "eco", "organic", "recycle", "natural", "fair trade",
+      "ethical", "green", "bamboo", "recycled"
+    ],
+    "article_url_patterns": [
+      "/blog/", "/article/", "/news/", "/guide/", "/review", "/reviews",
+      "youtube.", "wikipedia.", "/best-", "/top-"
+    ],
+    "generic_product_names": [
+      "product", "item", "thing", "test", "xyz", "abc"
+    ]
   }
 }

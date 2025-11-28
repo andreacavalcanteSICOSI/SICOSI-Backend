@@ -19,6 +19,18 @@ interface AnalysisRequest {
   category?: string;
 }
 
+interface ProductInfo {
+  productName?: string;
+  product_name?: string;
+  pageTitle?: string;
+  description?: string;
+  pageUrl?: string;
+  selectedText?: string;
+  userCountry?: string;
+  category?: string;
+  [key: string]: any;
+}
+
 const alternativesConfig = alternativesData as AlternativesConfig;
 
 const redis = new Redis({
@@ -76,6 +88,55 @@ function getTextProcessingConfig() {
       word_boundary_matching: true,
     }
   );
+}
+
+function getWebSearchConfig() {
+  return (alternativesConfig as any)['Web Search_config'] || {};
+}
+
+function getArticlePatterns(): string[] {
+  return (
+    getWebSearchConfig().article_url_patterns || [
+      '/blog/',
+      '/article/',
+      '/news/',
+      '/guide/',
+      '/review',
+      '/reviews',
+      'youtube.',
+      'wikipedia.',
+      '/best-',
+      '/top-',
+    ]
+  );
+}
+
+function containsAny(text: string, patterns: string[]): boolean {
+  const haystack = (text || '').toLowerCase();
+  return patterns.some((pattern) => haystack.includes((pattern || '').toLowerCase()));
+}
+
+function isArticleUrl(url: string, articlePatterns: string[]): boolean {
+  const normalizedUrl = (url || '').toLowerCase();
+  return articlePatterns.some((pattern) => normalizedUrl.includes((pattern || '').toLowerCase()));
+}
+
+function isEcommerceResult(
+  url: string,
+  title: string,
+  snippet: string,
+  domains: string[],
+  urlSignals: string[],
+  textSignals: string[],
+): boolean {
+  const normalizedUrl = (url || '').toLowerCase();
+  const normalizedText = `${title || ''} ${snippet || ''}`.toLowerCase();
+
+  const matchesDomain = domains.some((domain) => normalizedUrl.includes((domain || '').toLowerCase()));
+  const matchesUrlSignal = urlSignals.some((signal) => normalizedUrl.includes((signal || '').toLowerCase()));
+  const matchesTextSignal = textSignals.some((signal) => normalizedText.includes((signal || '').toLowerCase()));
+
+  return matchesDomain || matchesUrlSignal || matchesTextSignal;
 }
 
 function normalizeCategoryText(text: string): string {
@@ -277,7 +338,17 @@ function keywordFallbackCategory(
 }
 
 function categorizeProduct(name: string, context: string): string | null {
+  const webSearchConfig = getWebSearchConfig();
+  const genericNames =
+    webSearchConfig.generic_product_names || ['product', 'item', 'thing', 'test', 'xyz', 'abc'];
+
+  const nameLower = (name || '').toLowerCase().trim();
   const text = `${name} ${context}`.toLowerCase();
+
+  if (genericNames.includes(nameLower)) {
+    console.warn('⚠️ [HEURISTIC] Generic product name detected, skipping heuristic categorization');
+    return null;
+  }
 
   console.log('🔍 [HEURISTIC] Text to analyze:', text.substring(0, 150));
 
@@ -299,32 +370,59 @@ function categorizeProduct(name: string, context: string): string | null {
 }
 
 export async function identifyCategory(
-  productName: string,
-  context: string,
-  categoryFromFrontend?: string,
+  productInfo: ProductInfo,
+  categoryFromFrontend?: string | null,
 ): Promise<string> {
-  console.log('🔍 [CATEGORY] Starting identification...');
-  console.log('  - Product:', productName.substring(0, 50));
-  console.log('  - Frontend category:', categoryFromFrontend || 'none');
-
+  const name = productInfo.productName || productInfo.product_name || '';
+  const description = productInfo.description || '';
+  const pageTitle = productInfo.pageTitle || '';
   const availableCategories = alternativesConfig.categories || {};
 
-  if (categoryFromFrontend && availableCategories[categoryFromFrontend]) {
-    console.log('✅ [CATEGORY] Using category from frontend:', categoryFromFrontend);
-    return categoryFromFrontend;
-  }
+  console.log('🔍 [CATEGORY] Starting identification...');
+  console.log('  - Product:', name.substring(0, 50));
+  console.log('  - Frontend category:', categoryFromFrontend || 'none');
 
   if (categoryFromFrontend) {
-    console.warn('⚠️ [CATEGORY] Frontend sent invalid category:', categoryFromFrontend);
-    console.warn('⚠️ [CATEGORY] Available categories:', Object.keys(availableCategories));
+    const validCategories = Object.keys(availableCategories);
+
+    if (validCategories.includes(categoryFromFrontend)) {
+      console.log('✅ [BACKEND] Frontend category is valid:', categoryFromFrontend);
+      console.log('🔍 [BACKEND] Will verify with own analysis...');
+
+      const contextForHeuristic = `${pageTitle} ${description}`;
+
+      try {
+        const heuristicCategory = categorizeProduct(name, contextForHeuristic);
+
+        if (heuristicCategory && heuristicCategory !== categoryFromFrontend) {
+          console.warn('⚠️ [BACKEND] Category mismatch!');
+          console.warn(`  Frontend: ${categoryFromFrontend}`);
+          console.warn(`  Backend:  ${heuristicCategory}`);
+          console.log('✅ [BACKEND] Using backend analysis (more reliable)');
+          return heuristicCategory;
+        } else if (heuristicCategory === categoryFromFrontend) {
+          console.log('✅ [BACKEND] Frontend and backend agree:', categoryFromFrontend);
+          return categoryFromFrontend;
+        }
+      } catch (error) {
+        console.log('ℹ️ [BACKEND] Heuristic inconclusive, trusting frontend');
+        return categoryFromFrontend;
+      }
+
+      return categoryFromFrontend;
+    }
+
+    console.warn('⚠️ [BACKEND] Invalid category from frontend:', categoryFromFrontend);
+    console.log('🔍 [BACKEND] Will auto-detect...');
   }
 
+  console.log('🔍 [BACKEND] Auto-detecting category...');
   console.log('🔍 [CATEGORY] Trying heuristic identification...');
-  const heuristicCategory = categorizeProduct(productName, context);
+  const heuristicCategory = categorizeProduct(name, `${pageTitle} ${description}`);
 
   console.log('🔍 [HEURISTIC] Analyzing:', {
-    name: productName.substring(0, 50),
-    context: context.substring(0, 100),
+    name: name.substring(0, 50),
+    context: `${pageTitle} ${description}`.substring(0, 100),
     result: heuristicCategory,
   });
 
@@ -338,7 +436,7 @@ export async function identifyCategory(
   }
 
   console.log('🤖 [CATEGORY] Heuristic inconclusive, using AI...');
-  const aiCategory = keywordFallbackCategory(productName, context, availableCategories);
+  const aiCategory = keywordFallbackCategory(name, `${pageTitle} ${description}`, availableCategories);
   console.log('✅ [CATEGORY] AI selected:', aiCategory);
 
   return aiCategory;
@@ -368,14 +466,24 @@ export default async function handler(
   const groqClient = new Groq({ apiKey: groqApiKey });
 
   const body = (req.body || {}) as AnalysisRequest;
-  const productInfo = body.productInfo || {};
-  const productName = body.productName || body.product_name || productInfo.productName || productInfo.product_name;
+  const rawProductInfo = (body.productInfo || {}) as ProductInfo;
+  const productName = body.productName || body.product_name || rawProductInfo.productName || rawProductInfo.product_name;
+  const productInfo: ProductInfo = {
+    ...rawProductInfo,
+    productName: rawProductInfo.productName || rawProductInfo.product_name || productName,
+    product_name: rawProductInfo.product_name || rawProductInfo.productName || productName,
+  };
   const pageTitle = productInfo.pageTitle || body.pageTitle || '';
   const description = productInfo.description || body.description || '';
   const userCountry = (body.userCountry || productInfo.userCountry || 'US').toUpperCase();
-  const categoryFromFrontend = body.category || productInfo.category;
+  const categoryFromFrontend = body.category || null;
 
-  console.log('📥 [REQUEST] Category from frontend:', categoryFromFrontend);
+  if (categoryFromFrontend) {
+    console.log('📥 [BACKEND] Category from frontend:', categoryFromFrontend);
+  } else {
+    console.log('📥 [BACKEND] No category from frontend, will auto-detect');
+  }
+
   console.log('📥 [REQUEST] Full body:', JSON.stringify(body, null, 2));
 
   if (!productName || typeof productName !== 'string') {
@@ -383,6 +491,12 @@ export default async function handler(
   }
 
   const availableCategories = Object.keys(alternativesConfig.categories || {});
+  const webSearchConfig = getWebSearchConfig();
+  const articlePatterns = getArticlePatterns();
+  const ecommerceDomains = webSearchConfig.ecommerce_domains || [];
+  const ecommerceUrlSignals = webSearchConfig.ecommerce_url_signals || [];
+  const ecommerceTextSignals = webSearchConfig.ecommerce_text_signals || [];
+  const sustainKeywords = webSearchConfig.sustainability_keywords || [];
   let category: string | undefined;
 
   try {
@@ -398,11 +512,7 @@ export default async function handler(
     // ════════════════════════════════════════════════════════════
     // STEP 2: DETERMINAR CATEGORIA (priorizar frontend)
     // ════════════════════════════════════════════════════════════
-    category = await identifyCategory(
-      productName,
-      `${pageTitle} ${description}`.trim(),
-      categoryFromFrontend,
-    );
+    category = await identifyCategory(productInfo, categoryFromFrontend);
 
     if (!category || !alternativesConfig.categories?.[category]) {
       console.warn(`⚠️ [CATEGORY] "${category}" not found, using fallback`);
@@ -423,7 +533,32 @@ export default async function handler(
       searchDepth: 'basic',
     });
 
-    const searchContext = (searchResults.results || [])
+    const filteredSearchResults = (searchResults.results || []).filter((r: any) => {
+      const url = r.url || '';
+      const title = r.title || '';
+      const snippet = (r.content || r.snippet || '') as string;
+      const article = isArticleUrl(url, articlePatterns);
+      const ecommerce = isEcommerceResult(
+        url,
+        title,
+        snippet,
+        ecommerceDomains,
+        ecommerceUrlSignals,
+        ecommerceTextSignals,
+      );
+      const hasSustainabilitySignal = containsAny(`${title} ${snippet}`, sustainKeywords);
+
+      if (article) return false;
+      if (ecommerce && !hasSustainabilitySignal) return false;
+
+      return true;
+    });
+
+    const contextualResults = filteredSearchResults.length
+      ? filteredSearchResults
+      : searchResults.results || [];
+
+    const searchContext = contextualResults
       .map((r: any) => `${r.title}\n${r.content || r.snippet || ''}`)
       .join('\n\n');
 
@@ -490,11 +625,36 @@ export default async function handler(
         searchDepth: 'basic',
       });
 
-      if (altSearchResults.results?.length) {
+      const filteredAltResults = (altSearchResults.results || []).filter((r: any) => {
+        const url = r.url || '';
+        const title = r.title || '';
+        const snippet = (r.content || r.snippet || '') as string;
+        const article = isArticleUrl(url, articlePatterns);
+        const ecommerce = isEcommerceResult(
+          url,
+          title,
+          snippet,
+          ecommerceDomains,
+          ecommerceUrlSignals,
+          ecommerceTextSignals,
+        );
+        const hasSustainabilitySignal = containsAny(`${title} ${snippet}`, sustainKeywords);
+
+        if (article) return false;
+        if (ecommerce && !hasSustainabilitySignal) return false;
+
+        return true;
+      });
+
+      const altResultsForPrompt = filteredAltResults.length
+        ? filteredAltResults
+        : altSearchResults.results || [];
+
+      if (altResultsForPrompt.length) {
         const prompt = `You are a sustainable purchasing assistant. Suggest up to 3 alternatives for the product using ONLY the real search results below.
 
 REAL PRODUCTS FOUND:
-${altSearchResults.results
+${altResultsForPrompt
   .map(
     (r: any, i: number) => `${i + 1}. ${r.title}\nURL: ${r.url}\nSnippet: ${(r.snippet || '').substring(0, 180)}`,
   )
