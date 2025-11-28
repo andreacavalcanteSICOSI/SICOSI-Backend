@@ -18,14 +18,15 @@ const redis = new Redis({
 
 const CACHE_TTL_SECONDS = 24 * 60 * 60; // 24 horas
 
-function getCacheKey(productName: string, userCountry: string): string {
+function getCacheKey(productName: string, userCountry: string, categoryKey: string): string {
   const normalized = productName.toLowerCase().trim().replace(/\s+/g, ' ');
-  return `sicosi:${normalized}:${userCountry}`;
+  const normalizedCategory = (categoryKey || 'auto').toLowerCase();
+  return `sicosi:${normalized}:${normalizedCategory}:${userCountry}`;
 }
 
-async function getCachedAnalysis(productName: string, userCountry: string) {
+async function getCachedAnalysis(productName: string, userCountry: string, categoryKey: string) {
   try {
-    const key = getCacheKey(productName, userCountry);
+    const key = getCacheKey(productName, userCountry, categoryKey);
     const cached = await redis.get<any>(key);
 
     if (cached) {
@@ -41,9 +42,14 @@ async function getCachedAnalysis(productName: string, userCountry: string) {
   }
 }
 
-async function setCachedAnalysis(productName: string, userCountry: string, result: any): Promise<void> {
+async function setCachedAnalysis(
+  productName: string,
+  userCountry: string,
+  categoryKey: string,
+  result: any,
+): Promise<void> {
   try {
-    const key = getCacheKey(productName, userCountry);
+    const key = getCacheKey(productName, userCountry, categoryKey);
     await redis.set(key, result, { ex: CACHE_TTL_SECONDS });
     console.log(`💾 [CACHE] Redis SAVED: ${key.substring(0, 50)} (TTL: 24h)`);
   } catch (error) {
@@ -213,32 +219,49 @@ function selectWinner(scores: Array<{ category: string; score: number; exclusion
   return { ...first, confidence: ratio >= thresholds.confidence_ratio ? 'medium' : 'low' };
 }
 
-export function identifyCategory(productName: string, categories: string[], pageTitle = '', description = ''): string {
-  const lowerName = `${productName} ${pageTitle} ${description}`.toLowerCase();
+export function identifyCategory(
+  productName: string,
+  pageTitle: string,
+  description: string,
+  categories: Record<string, CategoryConfig>,
+): string {
+  const searchText = `${productName} ${pageTitle} ${description}`.toLowerCase();
 
-  const categoryKeywords: Record<string, string[]> = {
-    electronics: ['phone', 'iphone', 'samsung', 'laptop', 'computer', 'tablet', 'tv', 'camera', 'eletrônico'],
-    textiles_clothing: ['shirt', 'pants', 'dress', 'shoes', 'jacket', 'clothing', 'roupa', 'tênis', 'sapato'],
-    food_agriculture: ['food', 'organic', 'coffee', 'tea', 'snack', 'alimento', 'comida'],
-    furniture: ['chair', 'table', 'desk', 'sofa', 'bed', 'móvel', 'cadeira', 'mesa'],
-    cosmetics_personal_care: ['shampoo', 'soap', 'cream', 'lotion', 'perfume', 'cosmético', 'sabonete'],
-    digital_products_software: ['software', 'license', 'licença', 'download', 'app', 'aplicativo'],
-    construction_materials: ['cement', 'concrete', 'brick', 'steel', 'wood', 'cimento', 'tijolo'],
-    automotive: ['car', 'tire', 'pneu', 'carro', 'veículo', 'automotivo'],
-    cleaning_products: ['detergent', 'cleaner', 'soap', 'detergente', 'limpeza', 'sabão'],
-    toys_games: ['toy', 'game', 'brinquedo', 'jogo'],
-  };
+  let bestMatch: { category: string; score: number } = { category: '', score: 0 };
 
-  for (const [category, keywords] of Object.entries(categoryKeywords)) {
-    if (keywords.some((keyword) => lowerName.includes(keyword))) {
-      if (categories.includes(category)) {
-        return category;
+  for (const [categoryKey, categoryData] of Object.entries(categories)) {
+    const keywords = categoryData.keywords || [];
+    const productTypes = categoryData.product_types || [];
+    const allKeywords = [...keywords, ...productTypes];
+
+    let matchScore = 0;
+
+    for (const keyword of allKeywords) {
+      if (searchText.includes((keyword || '').toLowerCase())) {
+        matchScore += 1;
       }
+    }
+
+    const exclusionKeywords = categoryData.exclusion_keywords || [];
+    for (const exclusion of exclusionKeywords) {
+      if (searchText.includes((exclusion || '').toLowerCase())) {
+        matchScore = 0;
+        break;
+      }
+    }
+
+    if (matchScore > bestMatch.score) {
+      bestMatch = { category: categoryKey, score: matchScore };
     }
   }
 
-  console.warn(`[SICOSI] Could not identify category for "${productName}", using fallback`);
-  return categories[0] || 'electronics';
+  if (bestMatch.score > 0) {
+    return bestMatch.category;
+  }
+
+  const firstCategory = Object.keys(categories)[0] || 'electronics';
+  console.warn(`[SICOSI] No keyword match for "${productName}", using fallback: ${firstCategory}`);
+  return firstCategory;
 }
 
 export default async function handler(
@@ -270,6 +293,7 @@ export default async function handler(
   const pageTitle = productInfo.pageTitle || body.pageTitle || '';
   const description = productInfo.description || body.description || '';
   const userCountry = (body.userCountry || productInfo.userCountry || 'US').toUpperCase();
+  const categoryFromFrontend = body.category || productInfo.category;
 
   if (!productName || typeof productName !== 'string') {
     return res.status(400).json({ success: false, error: 'Product name is required' });
@@ -279,7 +303,11 @@ export default async function handler(
   let category: string | undefined;
 
   try {
-    const cached = await getCachedAnalysis(productName, userCountry);
+    const cacheKeyCategory =
+      categoryFromFrontend && availableCategories.includes(categoryFromFrontend)
+        ? categoryFromFrontend
+        : 'auto';
+    const cached = await getCachedAnalysis(productName, userCountry, cacheKeyCategory);
     if (cached) {
       return res.status(200).json({ ...cached, _meta: { cached: true } });
     }
@@ -303,12 +331,21 @@ export default async function handler(
     const searchCount = searchResults.results?.length ?? 0;
     console.log(`📄 [SEARCH] Found ${searchCount} results`);
 
-    category = identifyCategory(productName, availableCategories, pageTitle, description);
+    if (categoryFromFrontend && availableCategories.includes(categoryFromFrontend)) {
+      console.log(`📂 [CATEGORY] Using category from frontend: ${categoryFromFrontend}`);
+      category = categoryFromFrontend;
+    } else {
+      console.log('🔍 [CATEGORY] No valid category from frontend, auto-identifying...');
+      category = identifyCategory(productName, pageTitle, description, alternativesConfig.categories);
+      console.log(`📂 [CATEGORY] Auto-identified: ${category}`);
+    }
 
     if (!category || !alternativesConfig.categories?.[category]) {
-      console.warn(`[SICOSI] Category "${category}" not found or invalid, using fallback`);
-      category = identifyCategory(productName, availableCategories, pageTitle, description);
+      console.warn(`⚠️ [CATEGORY] "${category}" not found, using first available`);
+      category = availableCategories[0] || 'electronics';
     }
+
+    console.log(`✅ [CATEGORY] Final category: ${category}`);
 
     // ════════════════════════════════════════════════════════════
     // STEP 4: EXTRAIR FATOS COM LLM (Groq)
@@ -421,7 +458,7 @@ Return JSON with this structure:
       category,
     };
 
-    await setCachedAnalysis(productName, userCountry, responsePayload);
+    await setCachedAnalysis(productName, userCountry, category, responsePayload);
 
     return res.status(200).json(responsePayload);
   } catch (error) {
@@ -432,7 +469,8 @@ Return JSON with this structure:
       timestamp: new Date().toISOString(),
       debug: {
         productName,
-        category: category || 'undefined',
+        categoryFromFrontend: categoryFromFrontend || 'not provided',
+        categoryUsed: category || 'undefined',
         availableCategories,
       },
     });
