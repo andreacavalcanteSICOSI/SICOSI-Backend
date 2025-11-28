@@ -5673,8 +5673,40 @@
         "service"
       ],
       "keyword_synonyms": {}
-    }
-  },
+      },
+      "other": {
+        "name": "Other Products",
+        "keywords": [],
+        "sustainability_criteria": {
+          "durability": {
+            "weight": 0.25,
+            "guidelines": []
+          },
+          "repairability": {
+            "weight": 0.25,
+            "guidelines": []
+          },
+          "recyclability": {
+            "weight": 0.2,
+            "guidelines": []
+          },
+          "energy_efficiency": {
+            "weight": 0.15,
+            "guidelines": []
+          },
+          "materials": {
+            "weight": 0.15,
+            "guidelines": []
+          }
+        },
+        "certifications": [],
+        "references": [],
+        "brazilian_brands": [],
+        "product_types": [],
+        "exclusion_keywords": [],
+        "keyword_synonyms": {}
+      }
+    },
   "general_sustainability_principles": {
     "circular_economy": [
       "Design for longevity and durability",

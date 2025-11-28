@@ -213,23 +213,27 @@ function selectWinner(scores: Array<{ category: string; score: number; exclusion
   return { ...first, confidence: ratio >= thresholds.confidence_ratio ? 'medium' : 'low' };
 }
 
-export async function identifyCategory(productName: string, description: string, pageTitle: string) {
-  const weights = alternativesConfig.scoring_config.source_weights;
-  const sources = [
-    { text: productName, weight: weights.product_name_translated ?? weights.product_name_original ?? 1 },
-    { text: pageTitle, weight: weights.page_title ?? 1 },
-    { text: description, weight: weights.description ?? 1 },
-  ];
+export function identifyCategory(productName: string, categories: string[], pageTitle = '', description = ''): string {
+  const lowerName = `${productName} ${pageTitle} ${description}`.toLowerCase();
 
-  const categoryScores = calculateCategoryScores(sources);
-  const filteredScores = applyExclusionRules(categoryScores, productName);
-  const winner = selectWinner(filteredScores);
+  const categoryKeywords: Record<string, string[]> = {
+    electronics: ['phone', 'iphone', 'samsung', 'laptop', 'computer', 'tablet', 'tv', 'camera'],
+    textiles_clothing: ['shirt', 'pants', 'dress', 'shoes', 'jacket', 'clothing'],
+    food_agriculture: ['food', 'organic', 'coffee', 'tea', 'snack'],
+    furniture: ['chair', 'table', 'desk', 'sofa', 'bed'],
+    cosmetics_personal_care: ['shampoo', 'soap', 'cream', 'lotion', 'perfume'],
+    digital_products_software: ['software', 'license', 'licença', 'download', 'app'],
+  };
 
-  if (!winner || winner.confidence === 'low') {
-    throw new Error('Could not identify product category with enough confidence');
+  for (const [category, keywords] of Object.entries(categoryKeywords)) {
+    if (keywords.some((keyword) => lowerName.includes(keyword))) {
+      if (categories.includes(category)) {
+        return category;
+      }
+    }
   }
 
-  return winner.category;
+  return 'other';
 }
 
 export default async function handler(
@@ -258,6 +262,9 @@ export default async function handler(
     return res.status(400).json({ success: false, error: 'Product name is required' });
   }
 
+  const availableCategories = Object.keys(alternativesConfig.categories || {});
+  let category: string | undefined;
+
   try {
     const cached = await getCachedAnalysis(productName, userCountry);
     if (cached) {
@@ -283,18 +290,23 @@ export default async function handler(
     const searchCount = searchResults.results?.length ?? 0;
     console.log(`📄 [SEARCH] Found ${searchCount} results`);
 
-    const category = await identifyCategory(productName, description, pageTitle);
+    category = identifyCategory(productName, availableCategories, pageTitle, description);
+
+    if (!category || !alternativesConfig.categories?.[category]) {
+      console.warn(`[SICOSI] Category "${category}" not found or invalid, using "other"`);
+      category = 'other';
+    }
+
+    if (!alternativesConfig.categories?.[category]) {
+      throw new Error(`Category "other" not found in alternatives.json. Please add it.`);
+    }
 
     // ════════════════════════════════════════════════════════════
     // STEP 4: EXTRAIR FATOS COM LLM (Groq)
     // ════════════════════════════════════════════════════════════
     console.log('🤖 [EXTRACT] Extracting product facts with LLM...');
 
-    const facts: ProductFacts = await extractProductFacts(
-      productName,
-      category,
-      searchContext,
-    );
+    const facts: ProductFacts = await extractProductFacts(productName, category, searchContext);
 
     console.log('✅ [EXTRACT] Facts extracted:', Object.keys(facts));
 
@@ -303,7 +315,11 @@ export default async function handler(
     // ════════════════════════════════════════════════════════════
     console.log('🧮 [SCORE] Calculating sustainability score...');
 
-    const scoreResult = calculateSustainabilityScore(facts, category);
+    const scoreResult = calculateSustainabilityScore(
+      facts,
+      category,
+      alternativesConfig.categories,
+    );
 
     console.log(`📊 [SCORE] Final score: ${scoreResult.finalScore}/100 (${scoreResult.classification})`);
     console.log('📊 [SCORE] Breakdown:', scoreResult.breakdown);
@@ -405,6 +421,11 @@ Return JSON with this structure:
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
       timestamp: new Date().toISOString(),
+      debug: {
+        productName,
+        category: category || 'undefined',
+        availableCategories,
+      },
     });
   }
 }

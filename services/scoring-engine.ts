@@ -1,4 +1,5 @@
 import alternativesData from '../data/alternatives.json';
+import { AlternativesConfig, CategoryConfig } from '../types';
 
 interface CriterionEvaluation {
   score: number;
@@ -31,13 +32,21 @@ export interface SustainabilityScore {
  */
 export function calculateSustainabilityScore(
   facts: ProductFacts,
-  category: string
+  category: string,
+  alternatives: AlternativesConfig | Record<string, CategoryConfig> = alternativesData as any,
 ): SustainabilityScore {
-  const alternativesConfig = alternativesData as any;
-  const categoryData = alternativesConfig.categories[category];
+  const categories = 'categories' in alternatives ? (alternatives as AlternativesConfig).categories : alternatives;
+  let resolvedCategory = category;
 
-  if (!categoryData) {
-    throw new Error(`Category ${category} not found in alternatives.json`);
+  if (!resolvedCategory || !categories[resolvedCategory]) {
+    console.warn(`[SICOSI] Invalid category "${resolvedCategory}", using "other"`);
+    resolvedCategory = 'other';
+  }
+
+  const categoryData = categories[resolvedCategory];
+
+  if (!categoryData?.sustainability_criteria) {
+    throw new Error(`Weights not found for category "${resolvedCategory}"`);
   }
 
   const criteria = categoryData.sustainability_criteria;
