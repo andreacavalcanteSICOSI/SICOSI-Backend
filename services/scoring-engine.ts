@@ -1,4 +1,4 @@
-import alternativesData from '../data/alternatives.json';
+import { AlternativesConfig, CategoryConfig } from '../types';
 
 interface CriterionEvaluation {
   score: number;
@@ -25,36 +25,54 @@ export interface SustainabilityScore {
   classification: 'excellent' | 'good' | 'acceptable' | 'poor';
 }
 
+const DEFAULT_WEIGHTS: Record<string, number> = {
+  durability: 0.2,
+  repairability: 0.2,
+  recyclability: 0.2,
+  energy_efficiency: 0.2,
+  materials: 0.2,
+};
+
 /**
  * Calcula o score de sustentabilidade de forma DETERMINÍSTICA
  * usando os pesos definidos no alternatives.json
  */
 export function calculateSustainabilityScore(
   facts: ProductFacts,
-  category: string
+  category: string,
+  categories: AlternativesConfig['categories'] | Record<string, CategoryConfig>,
 ): SustainabilityScore {
-  const alternativesConfig = alternativesData as any;
-  const categoryData = alternativesConfig.categories[category];
+  const categoryData = category ? categories[category] : undefined;
 
-  if (!categoryData) {
-    throw new Error(`Category ${category} not found in alternatives.json`);
+  if (!categoryData?.sustainability_criteria) {
+    console.warn(`[SICOSI] Category "${category}" not found, using default weights`);
   }
 
-  const criteria = categoryData.sustainability_criteria;
+  const criteria = categoryData?.sustainability_criteria || {};
+
+  const weights: Record<string, number> = {};
+
+  for (const [criterionName, criterionConfig] of Object.entries(criteria) as [string, any][]) {
+    weights[criterionName] = criterionConfig.weight || 0;
+  }
+
+  if (Object.keys(weights).length === 0) {
+    console.warn(`[SICOSI] No criteria found for category "${category}", using defaults`);
+    Object.assign(weights, DEFAULT_WEIGHTS);
+  }
+
+  console.log(`📊 [SCORING] Using weights for category "${category}":`, weights);
+
   const breakdown: ScoreBreakdown = {};
 
   let totalWeightedScore = 0;
   let totalWeight = 0;
 
-  // Para cada critério da categoria (durability, repairability, etc.)
-  for (const [criterionName, criterionConfig] of Object.entries(criteria) as [string, any][]) {
-    const weight = criterionConfig.weight;
-
-    // Pegar o score do critério extraído pelo LLM (0-100)
+  // Para cada critério de sustentabilidade
+  for (const [criterionName, weight] of Object.entries(weights)) {
     const criterionData = facts[criterionName];
     const score = criterionData?.score || 0;
 
-    // Calcular score ponderado
     const weightedScore = score * weight;
 
     breakdown[criterionName] = {
@@ -68,11 +86,11 @@ export function calculateSustainabilityScore(
   }
 
   // Score final (0-100)
-  const finalScore = totalWeight > 0 ? totalWeightedScore : 0;
+  const finalScore = totalWeight > 0 ? Math.round(totalWeightedScore / totalWeight) : 0;
 
   // Classificação baseada no evaluation_methodology
   let classification: 'excellent' | 'good' | 'acceptable' | 'poor' = 'poor';
-  if (finalScore >= 90) {
+  if (finalScore >= 85) {
     classification = 'excellent';
   } else if (finalScore >= 70) {
     classification = 'good';

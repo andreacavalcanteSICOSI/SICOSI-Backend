@@ -9,6 +9,16 @@ import { AlternativesConfig, CategoryConfig } from '../../types';
 import { calculateSustainabilityScore, ProductFacts } from '../../services/scoring-engine';
 import { extractProductFacts, generateDescriptiveTexts } from '../../services/fact-extractor';
 
+interface AnalysisRequest {
+  productInfo?: Record<string, any>;
+  product_name?: string;
+  productName?: string;
+  product_url?: string;
+  pageUrl?: string;
+  userCountry?: string;
+  category?: string;
+}
+
 const alternativesConfig = alternativesData as AlternativesConfig;
 
 const redis = new Redis({
@@ -18,14 +28,15 @@ const redis = new Redis({
 
 const CACHE_TTL_SECONDS = 24 * 60 * 60; // 24 horas
 
-function getCacheKey(productName: string, userCountry: string): string {
+function getCacheKey(productName: string, userCountry: string, categoryKey: string): string {
   const normalized = productName.toLowerCase().trim().replace(/\s+/g, ' ');
-  return `sicosi:${normalized}:${userCountry}`;
+  const normalizedCategory = (categoryKey || 'auto').toLowerCase();
+  return `sicosi:${normalized}:${normalizedCategory}:${userCountry}`;
 }
 
-async function getCachedAnalysis(productName: string, userCountry: string) {
+async function getCachedAnalysis(productName: string, userCountry: string, categoryKey: string) {
   try {
-    const key = getCacheKey(productName, userCountry);
+    const key = getCacheKey(productName, userCountry, categoryKey);
     const cached = await redis.get<any>(key);
 
     if (cached) {
@@ -41,9 +52,14 @@ async function getCachedAnalysis(productName: string, userCountry: string) {
   }
 }
 
-async function setCachedAnalysis(productName: string, userCountry: string, result: any): Promise<void> {
+async function setCachedAnalysis(
+  productName: string,
+  userCountry: string,
+  categoryKey: string,
+  result: any,
+): Promise<void> {
   try {
-    const key = getCacheKey(productName, userCountry);
+    const key = getCacheKey(productName, userCountry, categoryKey);
     await redis.set(key, result, { ex: CACHE_TTL_SECONDS });
     console.log(`💾 [CACHE] Redis SAVED: ${key.substring(0, 50)} (TTL: 24h)`);
   } catch (error) {
@@ -213,29 +229,63 @@ function selectWinner(scores: Array<{ category: string; score: number; exclusion
   return { ...first, confidence: ratio >= thresholds.confidence_ratio ? 'medium' : 'low' };
 }
 
-export async function identifyCategory(productName: string, description: string, pageTitle: string) {
-  const weights = alternativesConfig.scoring_config.source_weights;
-  const sources = [
-    { text: productName, weight: weights.product_name_translated ?? weights.product_name_original ?? 1 },
-    { text: pageTitle, weight: weights.page_title ?? 1 },
-    { text: description, weight: weights.description ?? 1 },
-  ];
+export function identifyCategory(
+  productName: string,
+  pageTitle: string,
+  description: string,
+  categories: Record<string, CategoryConfig>,
+): string {
+  const searchText = `${productName} ${pageTitle} ${description}`.toLowerCase();
 
-  const categoryScores = calculateCategoryScores(sources);
-  const filteredScores = applyExclusionRules(categoryScores, productName);
-  const winner = selectWinner(filteredScores);
+  let bestMatch: { category: string; score: number } = { category: '', score: 0 };
 
-  if (!winner || winner.confidence === 'low') {
-    throw new Error('Could not identify product category with enough confidence');
+  for (const [categoryKey, categoryData] of Object.entries(categories)) {
+    const keywords = categoryData.keywords || [];
+    const productTypes = categoryData.product_types || [];
+    const allKeywords = [...keywords, ...productTypes];
+
+    let matchScore = 0;
+
+    for (const keyword of allKeywords) {
+      if (searchText.includes((keyword || '').toLowerCase())) {
+        matchScore += 1;
+      }
+    }
+
+    const exclusionKeywords = categoryData.exclusion_keywords || [];
+    for (const exclusion of exclusionKeywords) {
+      if (searchText.includes((exclusion || '').toLowerCase())) {
+        matchScore = 0;
+        break;
+      }
+    }
+
+    if (matchScore > bestMatch.score) {
+      bestMatch = { category: categoryKey, score: matchScore };
+    }
   }
 
-  return winner.category;
+  if (bestMatch.score > 0) {
+    return bestMatch.category;
+  }
+
+  const firstCategory = Object.keys(categories)[0] || 'electronics';
+  console.warn(`[SICOSI] No keyword match for "${productName}", using fallback: ${firstCategory}`);
+  return firstCategory;
 }
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
@@ -247,22 +297,57 @@ export default async function handler(
 
   const groqClient = new Groq({ apiKey: groqApiKey });
 
-  const body = req.body || {};
+  const body = (req.body || {}) as AnalysisRequest;
   const productInfo = body.productInfo || {};
   const productName = body.productName || body.product_name || productInfo.productName || productInfo.product_name;
   const pageTitle = productInfo.pageTitle || body.pageTitle || '';
   const description = productInfo.description || body.description || '';
   const userCountry = (body.userCountry || productInfo.userCountry || 'US').toUpperCase();
+  const categoryFromFrontend = body.category || productInfo.category;
+
+  console.log('📥 [REQUEST] Category from frontend:', categoryFromFrontend);
 
   if (!productName || typeof productName !== 'string') {
     return res.status(400).json({ success: false, error: 'Product name is required' });
   }
 
+  const availableCategories = Object.keys(alternativesConfig.categories || {});
+  let category: string | undefined;
+
   try {
-    const cached = await getCachedAnalysis(productName, userCountry);
+    const cacheKeyCategory =
+      categoryFromFrontend && availableCategories.includes(categoryFromFrontend)
+        ? categoryFromFrontend
+        : 'auto';
+    const cached = await getCachedAnalysis(productName, userCountry, cacheKeyCategory);
     if (cached) {
       return res.status(200).json({ ...cached, _meta: { cached: true } });
     }
+
+    // ════════════════════════════════════════════════════════════
+    // STEP 2: DETERMINAR CATEGORIA (priorizar frontend)
+    // ════════════════════════════════════════════════════════════
+    if (categoryFromFrontend && availableCategories.includes(categoryFromFrontend)) {
+      console.log(`✅ [CATEGORY] Using category from frontend: ${categoryFromFrontend}`);
+      category = categoryFromFrontend;
+    } else {
+      if (categoryFromFrontend) {
+        console.warn(`⚠️ [CATEGORY] Frontend sent invalid category: "${categoryFromFrontend}"`);
+        console.warn('⚠️ [CATEGORY] Available categories:', availableCategories);
+      } else {
+        console.log('ℹ️ [CATEGORY] No category from frontend, auto-identifying...');
+      }
+
+      category = identifyCategory(productName, pageTitle, description, alternativesConfig.categories);
+      console.log(`🤖 [CATEGORY] Auto-identified: ${category}`);
+    }
+
+    if (!category || !alternativesConfig.categories?.[category]) {
+      console.warn(`⚠️ [CATEGORY] "${category}" not found, using fallback`);
+      category = availableCategories[0] || 'electronics';
+    }
+
+    console.log(`📂 [CATEGORY] Final category: ${category}`);
 
     // ════════════════════════════════════════════════════════════
     // STEP 3: BUSCAR CONTEXTO WEB (Tavily)
@@ -283,18 +368,19 @@ export default async function handler(
     const searchCount = searchResults.results?.length ?? 0;
     console.log(`📄 [SEARCH] Found ${searchCount} results`);
 
-    const category = await identifyCategory(productName, description, pageTitle);
+    if (!category || !alternativesConfig.categories?.[category]) {
+      console.warn(`⚠️ [CATEGORY] "${category}" not found, using first available`);
+      category = availableCategories[0] || 'electronics';
+    }
+
+    console.log(`✅ [CATEGORY] Final category: ${category}`);
 
     // ════════════════════════════════════════════════════════════
     // STEP 4: EXTRAIR FATOS COM LLM (Groq)
     // ════════════════════════════════════════════════════════════
     console.log('🤖 [EXTRACT] Extracting product facts with LLM...');
 
-    const facts: ProductFacts = await extractProductFacts(
-      productName,
-      category,
-      searchContext,
-    );
+    const facts: ProductFacts = await extractProductFacts(productName, category, searchContext);
 
     console.log('✅ [EXTRACT] Facts extracted:', Object.keys(facts));
 
@@ -303,7 +389,11 @@ export default async function handler(
     // ════════════════════════════════════════════════════════════
     console.log('🧮 [SCORE] Calculating sustainability score...');
 
-    const scoreResult = calculateSustainabilityScore(facts, category);
+    const scoreResult = calculateSustainabilityScore(
+      facts,
+      category,
+      alternativesConfig.categories,
+    );
 
     console.log(`📊 [SCORE] Final score: ${scoreResult.finalScore}/100 (${scoreResult.classification})`);
     console.log('📊 [SCORE] Breakdown:', scoreResult.breakdown);
@@ -396,7 +486,7 @@ Return JSON with this structure:
       category,
     };
 
-    await setCachedAnalysis(productName, userCountry, responsePayload);
+    await setCachedAnalysis(productName, userCountry, category, responsePayload);
 
     return res.status(200).json(responsePayload);
   } catch (error) {
@@ -405,6 +495,12 @@ Return JSON with this structure:
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
       timestamp: new Date().toISOString(),
+      debug: {
+        productName,
+        categoryFromFrontend: categoryFromFrontend || 'not provided',
+        categoryUsed: category || 'undefined',
+        availableCategories,
+      },
     });
   }
 }
