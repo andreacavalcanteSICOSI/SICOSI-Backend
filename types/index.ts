@@ -74,47 +74,68 @@ export interface ProductInfo {
 
 // ===== TIPOS CORRIGIDOS PARA alternatives.json =====
 
-// Critério de sustentabilidade individual
-export interface SustainabilityCriterion {
+export interface CriterionConfig {
   weight: number;
   guidelines: string[];
 }
 
-// Objeto com múltiplos critérios
-export interface SustainabilityCriteria {
-  [key: string]: SustainabilityCriterion;
-}
-
-// Estrutura de uma categoria no alternatives.json
-export interface CategoryData {
+export interface CategoryConfig {
   name: string;
   keywords: string[];
-  sustainability_criteria: SustainabilityCriteria;
-  certifications: string[];
-  references: string[];
+  sustainability_criteria: Record<string, CriterionConfig>;
+  certifications?: string[];
+  references?: string[];
   brazilian_brands?: string[];
-  [key: string]: any; // Permite campos adicionais dinâmicos
+  keyword_synonyms?: Record<string, string[]>;
+  exclusion_keywords?: string[];
+  product_types?: string[];
+  [key: string]: any;
 }
 
-// Metadata do alternatives.json
-export interface AlternativesMetadata {
-  total_categories: number;
-  new_categories_added: string[];
-  coverage: string;
-  standards_referenced: string[];
-  special_focus: {
-    [key: string]: string;
+export type CategoryData = CategoryConfig;
+
+export interface ScoringConfig {
+  source_weights: Record<string, number>;
+  validation_thresholds: {
+    minimum_score: number;
+    confidence_ratio: number;
+    exclusion_penalty: number;
   };
 }
 
-// Estrutura completa do alternatives.json
-export interface AlternativesData {
+export interface EvaluationMethodology {
+  scoring: Record<string, string>;
+}
+
+export interface AlternativesConfig {
   version: string;
-  description: string;
-  lastUpdated: string;
-  source: string;
-  metadata: AlternativesMetadata;
-  categories: {
-    [key: string]: CategoryData;
+  categories: Record<string, CategoryConfig>;
+  scoring_config: ScoringConfig;
+  evaluation_methodology: EvaluationMethodology;
+  [key: string]: any;
+}
+
+export interface CriterionEvaluation {
+  score: number;
+  evidence: string[];
+}
+
+export interface ProductFacts {
+  [criterionName: string]: CriterionEvaluation;
+  certifications?: string[];
+  origin?: string;
+}
+
+export interface ScoreBreakdown {
+  [criterionName: string]: {
+    score: number;
+    weight: number;
+    weighted: number;
   };
+}
+
+export interface SustainabilityScore {
+  finalScore: number;
+  breakdown: ScoreBreakdown;
+  classification: 'excellent' | 'good' | 'acceptable' | 'poor';
 }
