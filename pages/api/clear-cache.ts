@@ -1,6 +1,4 @@
-// Em pages/api/clear-cache.ts (criar novo arquivo)
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createClient } from 'redis';
 
 export default async function handler(
   req: NextApiRequest,
@@ -11,12 +9,27 @@ export default async function handler(
   }
 
   try {
-    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-    const redisClient = createClient({ url: redisUrl });
-    
-    await redisClient.connect();
-    await redisClient.flushDb(); // Limpa todo o cache
-    await redisClient.disconnect();
+    const upstashUrl = process.env.UPSTASH_REDIS_REST_URL;
+    const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    if (!upstashUrl || !upstashToken) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Upstash Redis not configured' 
+      });
+    }
+
+    // ✅ Usar a REST API do Upstash para limpar o cache
+    const response = await fetch(`${upstashUrl}/flushdb`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${upstashToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Upstash error: ${response.statusText}`);
+    }
 
     return res.status(200).json({ 
       success: true, 
