@@ -211,7 +211,10 @@ function applyExclusionRules(scores: Array<{ category: string; score: number; ma
 }
 
 function selectWinner(scores: Array<{ category: string; score: number; exclusions: string[] }>) {
-  const thresholds = alternativesConfig.scoring_config.validation_thresholds;
+  const thresholds = alternativesConfig.scoring_config?.validation_thresholds || {
+    minimum_score: 1,
+    confidence_ratio: 1.5,
+  };
   const sorted = [...scores].sort((a, b) => b.score - a.score);
   const first = sorted[0];
   const second = sorted[1];
@@ -229,13 +232,12 @@ function selectWinner(scores: Array<{ category: string; score: number; exclusion
   return { ...first, confidence: ratio >= thresholds.confidence_ratio ? 'medium' : 'low' };
 }
 
-export function identifyCategory(
+function keywordFallbackCategory(
   productName: string,
-  pageTitle: string,
-  description: string,
+  context: string,
   categories: Record<string, CategoryConfig>,
 ): string {
-  const searchText = `${productName} ${pageTitle} ${description}`.toLowerCase();
+  const searchText = `${productName} ${context}`.toLowerCase();
 
   let bestMatch: { category: string; score: number } = { category: '', score: 0 };
 
@@ -274,6 +276,74 @@ export function identifyCategory(
   return firstCategory;
 }
 
+function categorizeProduct(name: string, context: string): string | null {
+  const text = `${name} ${context}`.toLowerCase();
+
+  console.log('🔍 [HEURISTIC] Text to analyze:', text.substring(0, 150));
+
+  const scores = calculateCategoryScores([
+    { text: name || '', weight: 3 },
+    { text: context || '', weight: 1 },
+  ]);
+
+  const scoresWithExclusions = applyExclusionRules(scores, name || '');
+  const winner = selectWinner(scoresWithExclusions);
+
+  if (winner) {
+    console.log('🔍 [HEURISTIC] Match found:', winner.category);
+    return winner.category;
+  }
+
+  console.log('🔍 [HEURISTIC] No match found');
+  return null;
+}
+
+export async function identifyCategory(
+  productName: string,
+  context: string,
+  categoryFromFrontend?: string,
+): Promise<string> {
+  console.log('🔍 [CATEGORY] Starting identification...');
+  console.log('  - Product:', productName.substring(0, 50));
+  console.log('  - Frontend category:', categoryFromFrontend || 'none');
+
+  const availableCategories = alternativesConfig.categories || {};
+
+  if (categoryFromFrontend && availableCategories[categoryFromFrontend]) {
+    console.log('✅ [CATEGORY] Using category from frontend:', categoryFromFrontend);
+    return categoryFromFrontend;
+  }
+
+  if (categoryFromFrontend) {
+    console.warn('⚠️ [CATEGORY] Frontend sent invalid category:', categoryFromFrontend);
+    console.warn('⚠️ [CATEGORY] Available categories:', Object.keys(availableCategories));
+  }
+
+  console.log('🔍 [CATEGORY] Trying heuristic identification...');
+  const heuristicCategory = categorizeProduct(productName, context);
+
+  console.log('🔍 [HEURISTIC] Analyzing:', {
+    name: productName.substring(0, 50),
+    context: context.substring(0, 100),
+    result: heuristicCategory,
+  });
+
+  if (heuristicCategory) {
+    if (!availableCategories[heuristicCategory]) {
+      console.error('❌ [CATEGORY] Heuristic returned invalid:', heuristicCategory);
+    } else {
+      console.log('✅ [CATEGORY] Heuristic match:', heuristicCategory);
+      return heuristicCategory;
+    }
+  }
+
+  console.log('🤖 [CATEGORY] Heuristic inconclusive, using AI...');
+  const aiCategory = keywordFallbackCategory(productName, context, availableCategories);
+  console.log('✅ [CATEGORY] AI selected:', aiCategory);
+
+  return aiCategory;
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
@@ -306,6 +376,7 @@ export default async function handler(
   const categoryFromFrontend = body.category || productInfo.category;
 
   console.log('📥 [REQUEST] Category from frontend:', categoryFromFrontend);
+  console.log('📥 [REQUEST] Full body:', JSON.stringify(body, null, 2));
 
   if (!productName || typeof productName !== 'string') {
     return res.status(400).json({ success: false, error: 'Product name is required' });
@@ -327,20 +398,11 @@ export default async function handler(
     // ════════════════════════════════════════════════════════════
     // STEP 2: DETERMINAR CATEGORIA (priorizar frontend)
     // ════════════════════════════════════════════════════════════
-    if (categoryFromFrontend && availableCategories.includes(categoryFromFrontend)) {
-      console.log(`✅ [CATEGORY] Using category from frontend: ${categoryFromFrontend}`);
-      category = categoryFromFrontend;
-    } else {
-      if (categoryFromFrontend) {
-        console.warn(`⚠️ [CATEGORY] Frontend sent invalid category: "${categoryFromFrontend}"`);
-        console.warn('⚠️ [CATEGORY] Available categories:', availableCategories);
-      } else {
-        console.log('ℹ️ [CATEGORY] No category from frontend, auto-identifying...');
-      }
-
-      category = identifyCategory(productName, pageTitle, description, alternativesConfig.categories);
-      console.log(`🤖 [CATEGORY] Auto-identified: ${category}`);
-    }
+    category = await identifyCategory(
+      productName,
+      `${pageTitle} ${description}`.trim(),
+      categoryFromFrontend,
+    );
 
     if (!category || !alternativesConfig.categories?.[category]) {
       console.warn(`⚠️ [CATEGORY] "${category}" not found, using fallback`);
@@ -473,8 +535,20 @@ Return JSON with this structure:
     // ════════════════════════════════════════════════════════════
     // STEP 8: MONTAR RESPOSTA FINAL
     // ════════════════════════════════════════════════════════════
+    const validatedAlternatives = alternatives;
+
     const responsePayload = {
       success: true,
+      analysis: {
+        sustainability_score: scoreResult.finalScore,
+        category,
+        summary: texts.summary,
+        strengths: texts.strengths,
+        weaknesses: texts.weaknesses,
+        recommendations: texts.recommendations,
+        breakdown: scoreResult.breakdown,
+        classification: scoreResult.classification,
+      },
       score: scoreResult.finalScore,
       breakdown: scoreResult.breakdown,
       classification: scoreResult.classification,
@@ -482,8 +556,29 @@ Return JSON with this structure:
       strengths: texts.strengths,
       weaknesses: texts.weaknesses,
       recommendations: texts.recommendations,
-      alternatives,
+      productInfo: {
+        productName,
+        pageUrl: productInfo.pageUrl || '',
+        pageTitle: productInfo.pageTitle || '',
+        selectedText: productInfo.selectedText || '',
+      },
       category,
+      originalProduct: {
+        name: productName,
+        category,
+        sustainability_score: scoreResult.finalScore,
+        breakdown: scoreResult.breakdown,
+        classification: scoreResult.classification,
+        summary: texts.summary,
+        strengths: texts.strengths,
+        weaknesses: texts.weaknesses,
+        recommendations: texts.recommendations,
+      },
+      alternatives: validatedAlternatives,
+      _meta: {
+        cached: cached || false,
+      },
+      timestamp: new Date().toISOString(),
     };
 
     await setCachedAnalysis(productName, userCountry, category, responsePayload);
