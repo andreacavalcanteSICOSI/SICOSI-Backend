@@ -217,12 +217,16 @@ export function identifyCategory(productName: string, categories: string[], page
   const lowerName = `${productName} ${pageTitle} ${description}`.toLowerCase();
 
   const categoryKeywords: Record<string, string[]> = {
-    electronics: ['phone', 'iphone', 'samsung', 'laptop', 'computer', 'tablet', 'tv', 'camera'],
-    textiles_clothing: ['shirt', 'pants', 'dress', 'shoes', 'jacket', 'clothing'],
-    food_agriculture: ['food', 'organic', 'coffee', 'tea', 'snack'],
-    furniture: ['chair', 'table', 'desk', 'sofa', 'bed'],
-    cosmetics_personal_care: ['shampoo', 'soap', 'cream', 'lotion', 'perfume'],
-    digital_products_software: ['software', 'license', 'licença', 'download', 'app'],
+    electronics: ['phone', 'iphone', 'samsung', 'laptop', 'computer', 'tablet', 'tv', 'camera', 'eletrônico'],
+    textiles_clothing: ['shirt', 'pants', 'dress', 'shoes', 'jacket', 'clothing', 'roupa', 'tênis', 'sapato'],
+    food_agriculture: ['food', 'organic', 'coffee', 'tea', 'snack', 'alimento', 'comida'],
+    furniture: ['chair', 'table', 'desk', 'sofa', 'bed', 'móvel', 'cadeira', 'mesa'],
+    cosmetics_personal_care: ['shampoo', 'soap', 'cream', 'lotion', 'perfume', 'cosmético', 'sabonete'],
+    digital_products_software: ['software', 'license', 'licença', 'download', 'app', 'aplicativo'],
+    construction_materials: ['cement', 'concrete', 'brick', 'steel', 'wood', 'cimento', 'tijolo'],
+    automotive: ['car', 'tire', 'pneu', 'carro', 'veículo', 'automotivo'],
+    cleaning_products: ['detergent', 'cleaner', 'soap', 'detergente', 'limpeza', 'sabão'],
+    toys_games: ['toy', 'game', 'brinquedo', 'jogo'],
   };
 
   for (const [category, keywords] of Object.entries(categoryKeywords)) {
@@ -233,7 +237,8 @@ export function identifyCategory(productName: string, categories: string[], page
     }
   }
 
-  return 'other';
+  console.warn(`[SICOSI] Could not identify category for "${productName}", using fallback`);
+  return categories[0] || 'electronics';
 }
 
 export default async function handler(
@@ -293,12 +298,8 @@ export default async function handler(
     category = identifyCategory(productName, availableCategories, pageTitle, description);
 
     if (!category || !alternativesConfig.categories?.[category]) {
-      console.warn(`[SICOSI] Category "${category}" not found or invalid, using "other"`);
-      category = 'other';
-    }
-
-    if (!alternativesConfig.categories?.[category]) {
-      throw new Error(`Category "other" not found in alternatives.json. Please add it.`);
+      console.warn(`[SICOSI] Category "${category}" not found or invalid, using fallback`);
+      category = identifyCategory(productName, availableCategories, pageTitle, description);
     }
 
     // ════════════════════════════════════════════════════════════
