@@ -1,4 +1,7 @@
+import alternativesData from '../data/alternatives.json';
 import { identifyCategory } from '../pages/api/analyze-product';
+
+const availableCategories = Object.keys((alternativesData as any).categories || {});
 
 const testCases = [
   {
@@ -40,8 +43,9 @@ async function runTests() {
     try {
       const result = await identifyCategory(
         test.input.productName,
-        test.input.description || '',
+        availableCategories,
         test.input.pageTitle,
+        test.input.description || '',
       );
       const passed = result === test.expected;
       console.log(`${passed ? '✅' : '❌'} ${test.name}: ${result} (expected: ${test.expected})`);
