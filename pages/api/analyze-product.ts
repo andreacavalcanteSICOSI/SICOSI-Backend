@@ -43,6 +43,93 @@ const redis = new Redis({
 
 const CACHE_TTL_SECONDS = 24 * 60 * 60; // 24 horas
 
+function getTranslations(language: string) {
+  const translations: Record<string, any> = {
+    'pt-BR': {
+      alternatives: 'Alternativas Sustentáveis',
+      viewProduct: 'Ver Produto',
+      searchGoogle: 'Buscar no Google',
+      buyAnyway: 'Comprar mesmo assim',
+      toast: '🎉 Parabéns! Este produto é sustentável!',
+      close: 'Fechar',
+      sustainabilityScoreTitle: 'Pontuação de Sustentabilidade',
+      strengthsTitle: 'Pontos Fortes',
+      weaknessesTitle: 'Pontos Fracos',
+      recommendationsTitle: 'Recomendações',
+      benefitsLabel: 'Benefícios:',
+      certificationsLabel: 'Certificações:',
+      whereToBuyLabel: 'Onde comprar:',
+      noAlternatives: 'Nenhuma alternativa disponível',
+      noSummary: 'Resumo não disponível',
+      alternativeFallback: 'Alternativa',
+      purchaseAllowed: 'Compra permitida',
+      offlineAnalysisWarning: 'Análise offline - dados limitados',
+    },
+    en: {
+      alternatives: 'Sustainable Alternatives',
+      viewProduct: 'View Product',
+      searchGoogle: 'Search on Google',
+      buyAnyway: 'Buy anyway',
+      toast: '🎉 Congratulations! This product is sustainable!',
+      close: 'Close',
+      sustainabilityScoreTitle: 'Sustainability Score',
+      strengthsTitle: 'Strengths',
+      weaknessesTitle: 'Weaknesses',
+      recommendationsTitle: 'Recommendations',
+      benefitsLabel: 'Benefits:',
+      certificationsLabel: 'Certifications:',
+      whereToBuyLabel: 'Where to buy:',
+      noAlternatives: 'No alternatives available',
+      noSummary: 'Summary not available',
+      alternativeFallback: 'Alternative',
+      purchaseAllowed: 'Purchase allowed',
+      offlineAnalysisWarning: 'Offline analysis - limited data',
+    },
+    de: {
+      alternatives: 'Nachhaltige Alternativen',
+      viewProduct: 'Produkt ansehen',
+      searchGoogle: 'Bei Google suchen',
+      buyAnyway: 'Trotzdem kaufen',
+      toast: '🎉 Glückwunsch! Dieses Produkt ist nachhaltig!',
+      close: 'Schließen',
+      sustainabilityScoreTitle: 'Nachhaltigkeitsbewertung',
+      strengthsTitle: 'Stärken',
+      weaknessesTitle: 'Schwächen',
+      recommendationsTitle: 'Empfehlungen',
+      benefitsLabel: 'Vorteile:',
+      certificationsLabel: 'Zertifizierungen:',
+      whereToBuyLabel: 'Wo zu kaufen:',
+      noAlternatives: 'Keine Alternativen verfügbar',
+      noSummary: 'Zusammenfassung nicht verfügbar',
+      alternativeFallback: 'Alternative',
+      purchaseAllowed: 'Kauf erlaubt',
+      offlineAnalysisWarning: 'Offline-Analyse - begrenzte Daten',
+    },
+    ko: {
+      alternatives: '지속 가능한 대안',
+      viewProduct: '제품 보기',
+      searchGoogle: '구글에서 검색',
+      buyAnyway: '그냥 구매하기',
+      toast: '🎉 축하합니다! 이 제품은 지속 가능합니다!',
+      close: '닫기',
+      sustainabilityScoreTitle: '지속 가능성 점수',
+      strengthsTitle: '강점',
+      weaknessesTitle: '약점',
+      recommendationsTitle: '권장 사항',
+      benefitsLabel: '혜택:',
+      certificationsLabel: '인증:',
+      whereToBuyLabel: '구매처:',
+      noAlternatives: '사용 가능한 대안 없음',
+      noSummary: '요약 없음',
+      alternativeFallback: '대안',
+      purchaseAllowed: '구매 허용됨',
+      offlineAnalysisWarning: '오프라인 분석 - 제한된 데이터',
+    },
+  };
+
+  return translations[language] || translations['en'];
+}
+
 function getCacheKey(productName: string, userCountry: string, categoryKey: string): string {
   const normalized = productName.toLowerCase().trim().replace(/\s+/g, ' ');
   const normalizedCategory = (categoryKey || 'auto').toLowerCase();
@@ -480,6 +567,7 @@ export default async function handler(
   const description = productInfo.description || body.description || '';
   const userCountry = (body.userCountry || productInfo.userCountry || 'US').toUpperCase();
   const userLanguage = body.userLanguage || productInfo.userLanguage || 'pt-BR';
+  const translations = getTranslations(userLanguage || 'en');
   const categoryFromFrontend = body.category || null;
 
   if (categoryFromFrontend) {
@@ -510,7 +598,7 @@ export default async function handler(
         : 'auto';
     const cached = await getCachedAnalysis(productName, userCountry, cacheKeyCategory);
     if (cached) {
-      return res.status(200).json({ ...cached, _meta: { cached: true } });
+      return res.status(200).json({ ...cached, translations, _meta: { cached: true } });
     }
 
     // ════════════════════════════════════════════════════════════
@@ -682,6 +770,7 @@ Product is NOT sustainable
 MUST provide exactly 4 sustainable alternatives
 Each alternative MUST have score >= 70
 Use ONLY URLs from REAL PRODUCTS FOUND list above
+If product not in list, set product_url to null
 Respond in same language as product name
 IF score >= 70:
 Product IS sustainable
@@ -757,6 +846,7 @@ Return empty array: "alternatives": []
         recommendations: texts.recommendations,
       },
       alternatives: validatedAlternatives,
+      translations,
       _meta: {
         cached: cached || false,
       },
