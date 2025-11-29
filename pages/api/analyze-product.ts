@@ -1194,7 +1194,7 @@ async function searchRealProducts(
   // Query otimizada com site: operator
   const query = `sustainable eco-friendly ${productType} ${
     country.name
-  } (${country.domains.map((d) => "site:" + d).join(" OR ")})`;
+  } (${country.domains.map((d: string) => "site:" + d).join(" OR ")})`;
 
   console.log(`🔍 [TAVILY] Query: ${query}`);
 
@@ -1211,12 +1211,6 @@ async function searchRealProducts(
 
     console.log(`🔍 [TAVILY] Found ${validUrls.size} valid product URLs`);
 
-    console.log("🔍 [TAVILY] Search results:", {
-      query,
-      resultsCount: results.results?.length || 0,
-      validUrls: Array.from(validUrls).slice(0, 5),
-    });
-
     // ✅ FALLBACK: Se poucos resultados, simplificar query
     if (!results.success || !results.results || results.results.length < 5) {
       console.log("⚠️ [SEARCH] Few results, trying broader query...");
@@ -1228,13 +1222,13 @@ async function searchRealProducts(
         searchDepth: "advanced",
         includeAnswer: false,
       });
-    }
 
-    (results.results || []).forEach((r) => {
-      if (r?.url) {
-        validUrls.add(r.url);
-      }
-    });
+      (results.results || []).forEach((r) => {
+        if (r?.url) {
+          validUrls.add(r.url);
+        }
+      });
+    }
 
     if (!results.success || !results.results) {
       return { products: [], validUrls: Array.from(validUrls) };
@@ -1242,146 +1236,48 @@ async function searchRealProducts(
 
     const rawResults = (results.results || []).filter(Boolean);
 
-    const ecommerceDomains = [
-      "mercadolivre.com",
-      "amazon.com",
-      "amazon.com.br",
-      "magazineluiza.com",
-      "americanas.com",
-      "shopee.com",
-      "shopee.com.br",
-      "walmart.com",
-      "target.com",
-      "ebay.com",
-      "bestbuy.com",
-      "coppel.com",
-      "liverpool.com.mx",
-      "aliexpress.com",
-      "kabum.com",
-      "submarino.com",
-      "carrefour",
-      "allegro",
-      "rakuten",
-      "falabella",
-      "leroymerlin",
-      "decathlon",
-    ];
+    // ✅ Pegar domínios permitidos do país (SEM HARDCODE)
+    const allowedDomains = country.domains;
 
-    const ecommerceUrlSignals = [
-      "/dp/",
-      "/product/",
-      "/products/",
-      "/produto/",
-      "/p/",
-      "/item/",
-      "/listing/",
-      "/buy/",
-      "/shop/",
-      "/loja/",
-      "/store/",
-      "/collections/",
-      "/categoria/",
-      "/category/",
-      "/tenis",
-      "/sapato",
-      "/calcado",
-      "/calçado",
-    ];
-
-    const ecommerceTextSignals = [
-      "comprar",
-      "buy",
-      "shop",
-      "loja",
-      "store",
-      "carrinho",
-      "cart",
-      "frete",
-      "entrega",
-      "parcelamento",
-    ];
-
-    const sustainKeywords = [
-      "sustain",
-      "eco",
-      "organic",
-      "recycle",
-      "natural",
-      "fair trade",
-      "ethical",
-      "green",
-      "bamboo",
-      "recycled",
-    ];
+    // ✅ Pegar certificações da categoria (SEM HARDCODE)
+    const sustainKeywords = categoryData.certifications.map((cert) =>
+      cert.toLowerCase()
+    );
 
     const validProducts = rawResults.filter((r) => {
       const url = (r.url || "").toLowerCase();
       const text = `${r.title || ""} ${r.snippet || ""}`.toLowerCase();
 
       if (!url) {
-        console.log(
-          `🔍 [FILTER] Rejected: (missing url) - Reason: missing URL`
-        );
         return false;
       }
 
       let host = "";
       try {
-        host = new URL(url).host.toLowerCase();
+        host = new URL(url).hostname.toLowerCase();
       } catch (_) {
         console.log(`🔍 [FILTER] Rejected: ${url} - Reason: invalid URL`);
         return false;
       }
 
-      const isArticle = [
-        "/blog/",
-        "/article/",
-        "/news/",
-        "/guide/",
-        "/review",
-        "/reviews",
-        "youtube.",
-        "wikipedia.",
-        "/best-",
-        "/top-",
-      ].some((p) => url.includes(p));
-      if (isArticle) {
-        console.log(`🔍 [FILTER] Rejected: ${url} - Reason: article/guide`);
-        return false;
-      }
-
-      const matchesEcommerce = ecommerceDomains.some((domain) =>
+      // ✅ Verificar se domínio pertence ao país (SEM HARDCODE)
+      const matchesDomain = allowedDomains.some((domain: string) =>
         host.includes(domain)
       );
-      const hasUrlSignal =
-        ecommerceUrlSignals.some((p) => url.includes(p)) ||
-        url.includes("?srsltid=") ||
-        /\/[\w-]+-\d+/.test(url);
-      const hasPrice = /(r\$|\$|€|£)/.test(text);
-      const hasPurchaseKeywords = ecommerceTextSignals.some((keyword) =>
-        text.includes(keyword)
-      );
-      const hasSizeInfo = /\b(p|m|g|gg|\d{2})\b/.test(text);
-      const isSustainable =
-        sustainKeywords.some((kw) => text.includes(kw)) ||
-        categoryData.certifications.some((cert) => {
-          const certText = (cert || "").toLowerCase();
-          return certText && text.includes(certText);
-        });
 
-      const isEcommerceLike =
-        matchesEcommerce ||
-        hasUrlSignal ||
-        hasPrice ||
-        hasPurchaseKeywords ||
-        hasSizeInfo;
-
-      if (!isEcommerceLike) {
+      if (!matchesDomain) {
         console.log(
-          `🔍 [FILTER] Rejected: ${url} - Reason: not an e-commerce product page`
+          `🔍 [FILTER] Rejected: ${url} - Reason: domain not in ${userCountry}`
         );
         return false;
       }
+
+      // ✅ Verificar se tem palavras-chave de sustentabilidade (SEM HARDCODE)
+      const isSustainable =
+        sustainKeywords.some((kw) => text.includes(kw)) ||
+        text.includes("sustain") ||
+        text.includes("eco") ||
+        text.includes("organic");
 
       if (!isSustainable) {
         console.log(
@@ -1397,65 +1293,9 @@ async function searchRealProducts(
       `✅ [SEARCH] Filtered: ${validProducts.length}/${results.results.length}`
     );
 
-    let unique = Array.from(
+    const unique = Array.from(
       new Map(validProducts.map((p) => [p.url, p])).values()
     );
-
-    // Fallback permissivo: se nada passou, pegar até 5 e-commerces usando sinais gerais sem exigir sustentabilidade
-    if (unique.length === 0) {
-      console.log(
-        "⚠️ [SEARCH] No sustainable matches, applying ecommerce-only fallback"
-      );
-      const ecommerceOnly = rawResults.filter((r) => {
-        const url = (r.url || "").toLowerCase();
-        if (!url) return false;
-
-        try {
-          const host = new URL(url).host.toLowerCase();
-          const isArticle = [
-            "/blog/",
-            "/article/",
-            "/news/",
-            "/guide/",
-            "/review",
-            "/reviews",
-            "youtube.",
-            "wikipedia.",
-            "/best-",
-            "/top-",
-          ].some((p) => url.includes(p));
-          if (isArticle) return false;
-
-          const hasUrlSignal =
-            ecommerceUrlSignals.some((p) => url.includes(p)) ||
-            url.includes("?srsltid=") ||
-            /\/[\w-]+-\d+/.test(url);
-          const text = `${r.title || ""} ${r.snippet || ""}`.toLowerCase();
-          const hasPrice = /(r\$|\$|€|£)/.test(text);
-          const hasPurchaseKeywords = ecommerceTextSignals.some((keyword) =>
-            text.includes(keyword)
-          );
-          const hasSizeInfo = /\b(p|m|g|gg|\d{2})\b/.test(text);
-          const matchesEcommerce = ecommerceDomains.some((domain) =>
-            host.includes(domain)
-          );
-
-          return (
-            matchesEcommerce ||
-            hasUrlSignal ||
-            hasPrice ||
-            hasPurchaseKeywords ||
-            hasSizeInfo
-          );
-        } catch (_) {
-          return false;
-        }
-      });
-
-      unique = Array.from(
-        new Map(ecommerceOnly.map((p) => [p.url, p])).values()
-      ).slice(0, 5);
-    }
 
     const limited = unique.slice(0, 10);
 
@@ -1688,188 +1528,160 @@ async function analyzeWithGroq(
 
   const prompt = `You are a sustainability expert analyzing products for users worldwide.
 
-═══════════════════════════════════════════════════════════════
-USER CONTEXT:
-═══════════════════════════════════════════════════════════════
-- User Country: ${userCountry}
-- Product Name: ${productName}
-- Local E-commerce Sites: ${localEcommerce.slice(0, 5).join(", ")}
+    ═══════════════════════════════════════════════════════════════
+    USER CONTEXT:
+    ═══════════════════════════════════════════════════════════════
+    - User Country: ${userCountry}
+    - Product Name: ${productName}
+    - Local E-commerce Sites: ${localEcommerce.slice(0, 5).join(", ")}
 
-═══════════════════════════════════════════════════════════════
-DYNAMIC LOCALIZATION (CRITICAL):
-═══════════════════════════════════════════════════════════════
+    ═══════════════════════════════════════════════════════════════
+    DYNAMIC LOCALIZATION (CRITICAL):
+    ═══════════════════════════════════════════════════════════════
 
-1. LANGUAGE DETECTION:
-   - Analyze the product name: "${productName}"
-   - Determine the language automatically
-   - Respond in the SAME LANGUAGE as the product name
-   - If product name is in Korean, respond in Korean
-   - If product name is in German, respond in German
-   - If product name is in Spanish, respond in Spanish
-   - And so on for ANY language
+    1. LANGUAGE DETECTION:
+      - Analyze the product name: "${productName}"
+      - Determine the language automatically
+      - Respond in the SAME LANGUAGE as the product name
+      - If product name is in Korean, respond in Korean
+      - If product name is in German, respond in German
+      - If product name is in Spanish, respond in Spanish
+      - And so on for ANY language
 
-2. E-COMMERCE SITES:
-   - User is in ${userCountry}
-   - Suggest products available in these local sites: ${localEcommerce.join(
-     ", "
-   )}
-   - Provide realistic product URLs from local e-commerce
+    2. CERTIFICATIONS:
+      - Include certifications relevant to ${userCountry}
+      - Research what certifications are used in this country
 
-3. CERTIFICATIONS:
-   - Include certifications relevant to ${userCountry}
-   - Research what certifications are used in this country
+    ═══════════════════════════════════════════════════════════════
+    SCORING METHODOLOGY (MANDATORY):
+    ═══════════════════════════════════════════════════════════════
 
-═══════════════════════════════════════════════════════════════
-SCORING METHODOLOGY (MANDATORY):
-═══════════════════════════════════════════════════════════════
+    You MUST calculate sustainability_score using weighted average of criteria scores.
 
-You MUST calculate sustainability_score using weighted average of criteria scores.
+    STEP 1 - Analyze the product name for material indicators:
+    Look for keywords that indicate sustainable materials:
+    - Natural fibers: bamboo, bambu, linen, linho, hemp, cânhamo, cotton, algodão
+    - Organic: organic, orgânico, orgânica, bio
+    - Recycled: recycled, reciclado, reciclada, upcycled
 
-STEP 1 - Analyze the product name for material indicators:
-Look for keywords that indicate sustainable materials:
-- Natural fibers: bamboo, bambu, linen, linho, hemp, cânhamo, cotton, algodão
-- Organic: organic, orgânico, orgânica, bio
-- Recycled: recycled, reciclado, reciclada, upcycled
+    If found, the "materials" criterion should score HIGH (75-95).
 
-If found, the "materials" criterion should score HIGH (75-95).
+    STEP 2 - Score each criterion (0-100):
+    For each criterion in the category, evaluate based on:
+    - Evidence of compliance with guidelines: 70-100
+    - Sustainable material in product name (for materials criterion): 75-95
+    - No information available: 50 (neutral, NOT zero)
+    - Evidence of non-compliance: 0-30
 
-STEP 2 - Score each criterion (0-100):
-For each criterion in the category, evaluate based on:
-- Evidence of compliance with guidelines: 70-100
-- Sustainable material in product name (for materials criterion): 75-95
-- No information available: 50 (neutral, NOT zero)
-- Evidence of non-compliance: 0-30
+    STEP 3 - Calculate weighted score:
+    Final score = sum of (criterion_score × criterion_weight) for all criteria
 
-STEP 3 - Calculate weighted score:
-Final score = sum of (criterion_score × criterion_weight) for all criteria
+    STEP 4 - Validate your score:
+    - Product with sustainable material in name + no negative indicators = minimum 55
+    - Product with certified sustainable material = minimum 70
+    - Product with synthetic/conventional materials = maximum 50
 
-STEP 4 - Validate your score:
-- Product with sustainable material in name + no negative indicators = minimum 55
-- Product with certified sustainable material = minimum 70
-- Product with synthetic/conventional materials = maximum 50
+    CRITICAL: The product name "${productName}" - analyze it for material keywords BEFORE scoring.
 
-CRITICAL: The product name "${productName}" - analyze it for material keywords BEFORE scoring.
+    ═══════════════════════════════════════════════════════════════
+    IMPORTANT:
+    ═══════════════════════════════════════════════════════════════
 
-═══════════════════════════════════════════════════════════════
-EXAMPLES:
-═══════════════════════════════════════════════════════════════
+    - Do NOT ask what language to use
+    - Do NOT default to English unless product name is in English
+    - Detect language automatically from product name
+    - Match the language exactly
+    - This works for ANY language: Korean, Japanese, Chinese, Arabic, Hindi, etc.
 
-Example 1 - Korean product:
-Input: "남성용 가을 겨울 패턴 캐주얼 투피스"
-Country: KR
-Response: {
-  "summary": "이 제품은 합성 소재를 사용하여...",
-  "weaknesses": ["합성 소재", "환경 인증 없음"],
-  "where_to_buy": "Coupang, Gmarket"
-}
+    Now analyze this product:
+    Product: ${productName}
+    Category: ${categoryData.name}
+    Country: ${userCountry}
+    URL: ${productInfo.pageUrl || "N/A"}
 
-Example 2 - German product:
-Input: "Lässiges zweiteiliges Set für Herren"
-Country: DE
-Response: {
-  "summary": "Dieses Produkt hat eine niedrige...",
-  "weaknesses": ["Synthetische Materialien", "Keine Zertifizierungen"],
-  "where_to_buy": "Amazon Deutschland, MediaMarkt"
-}
+    SUSTAINABILITY CRITERIA FOR THIS CATEGORY:
+    ${criteriaText}
 
-Example 3 - Portuguese product:
-Input: "Conjunto casual de duas peças"
-Country: BR
-Response: {
-  "summary": "Este produto tem baixo impacto...",
-  "weaknesses": ["Materiais sintéticos", "Sem certificações"],
-  "where_to_buy": "Mercado Livre, Americanas"
-}
+    RELEVANT CERTIFICATIONS: ${categoryData.certifications.join(", ")}
+    ${productsText}
 
-═══════════════════════════════════════════════════════════════
-IMPORTANT:
-═══════════════════════════════════════════════════════════════
+    ═══════════════════════════════════════════════════════════════
+    CRITICAL INSTRUCTIONS - READ CAREFULLY:
+    ═══════════════════════════════════════════════════════════════
 
-- Do NOT ask what language to use
-- Do NOT default to English unless product name is in English
-- Detect language automatically from product name
-- Match the language exactly
-- This works for ANY language: Korean, Japanese, Chinese, Arabic, Hindi, etc.
+    1. PRODUCT MATCHING:
+      - Suggest ONLY products that appear in the "REAL PRODUCTS FOUND" list above
+      - Match products by name and description from the search results
+      - Each alternative MUST correspond to one of the numbered items above
 
-Now analyze this product:
-Product: ${productName}
-Category: ${categoryData.name}
-Country: ${userCountry}
-URL: ${productInfo.pageUrl || "N/A"}
+    2. URL USAGE:
+      - Use the EXACT URL from the search results (copy it exactly as shown)
+      - DO NOT modify, shorten, or create new URLs
+      - If you cannot match a sustainable product from the list, DO NOT include it
+      - Better to return fewer alternatives than to invent URLs
 
-SUSTAINABILITY CRITERIA FOR THIS CATEGORY:
-${criteriaText}
+    3. FALLBACK:
+      - If NO suitable sustainable alternatives found in the search results, return empty alternatives array: []
+      - DO NOT suggest products that are not in the search results
 
-RELEVANT CERTIFICATIONS: ${categoryData.certifications.join(", ")}
-${productsText}
+    4. VALIDATION:
+      - Before adding an alternative, verify its number (1, 2, 3...) exists in "REAL PRODUCTS FOUND"
+      - Copy the exact URL shown after "URL:" for that product
 
-═══════════════════════════════════════════════════════════════
-CRITICAL URL RULES:
-════════════════════════════════════════════════════════════════
+    ═══════════════════════════════════════════════════════════════
+    VALIDATION RULES:
+    ═══════════════════════════════════════════════════════════════
 
-- ONLY use URLs from the REAL PRODUCTS FOUND list above
-- If suggesting a product not in the list, set product_url to null
-- NEVER invent or guess URLs
-- NEVER create URLs based on product names
-- Invalid example: "mercadolivre.com.br/produto-nome" (WRONG - invented)
-- Valid example: Use exact URL from search results or null
+    1. Alternatives MUST be the SAME product type as the original
+    2. Suggest up to 4 sustainable alternatives (or fewer if search results are limited)
+    3. Each alternative must have sustainability_score >= 70
+    4. Use ONLY products from the "REAL PRODUCTS FOUND" list
+    5. If no suitable products found in search results, return empty alternatives array: []
 
-═══════════════════════════════════════════════════════════════
-CRITICAL VALIDATION RULES:
-═══════════════════════════════════════════════════════════════
+    ═══════════════════════════════════════════════════════════════
+    REQUIRED JSON RESPONSE FORMAT:
+    ═══════════════════════════════════════════════════════════════
 
-1. Alternatives MUST be the SAME product type as the original
-2. You MUST provide at least 4 sustainable alternatives
-3. Each alternative must have sustainability_score >= 70
-4. Use REAL products from the search results when available
-5. If no real products found, suggest well-known sustainable brands
-
-═══════════════════════════════════════════════════════════════
-REQUIRED JSON RESPONSE FORMAT:
-═══════════════════════════════════════════════════════════════
-
-{
-  "originalProduct": {
-    "name": "${productName}",
-    "category": "${category}",
-    "sustainability_score": <number 0-100>,
-    "summary": "<analysis in detected language>",
-    "environmental_impact": {
-      "carbon_footprint": "<assessment>",
-      "water_usage": "<assessment>",
-      "recyclability": "<assessment>",
-      "toxicity": "<assessment>"
-    },
-    "strengths": ["<strength in detected language>", "<strength in detected language>"],
-    "weaknesses": ["<weakness in detected language>", "<weakness in detected language>"],
-    "certifications_found": ["<certifications>"],
-    "recommendations": ["<recommendation in detected language>", "<recommendation in detected language>"],
-  },
-  "alternatives": [
     {
-      "name": "<product name in detected language>",
-      "description": "<clear description in detected language>",
-      "benefits": "<why more sustainable, in detected language>",
-      "sustainability_score": <number 70-100>,
-      "where_to_buy": "<prefer: ${localEcommerce[0]}, ${
-    localEcommerce[1]
-  }, or ${localEcommerce[2]}>",
-      "certifications": ["<relevant certifications>"],
-      "product_url": "<URL from local e-commerce if available, else null>"
+      "originalProduct": {
+        "name": "${productName}",
+        "category": "${category}",
+        "sustainability_score": <number 0-100>,
+        "summary": "<analysis in detected language>",
+        "environmental_impact": {
+          "carbon_footprint": "<assessment>",
+          "water_usage": "<assessment>",
+          "recyclability": "<assessment>",
+          "toxicity": "<assessment>"
+        },
+        "strengths": ["<strength in detected language>", "<strength in detected language>"],
+        "weaknesses": ["<weakness in detected language>", "<weakness in detected language>"],
+        "certifications_found": ["<certifications>"],
+        "recommendations": ["<recommendation in detected language>", "<recommendation in detected language>"]
+      },
+      "alternatives": [
+        {
+          "name": "<product name from search results>",
+          "description": "<clear description in detected language>",
+          "benefits": "<why more sustainable, in detected language>",
+          "sustainability_score": <number 70-100>,
+          "where_to_buy": "<store names from search results>",
+          "certifications": ["<relevant certifications>"],
+          "product_url": "<EXACT URL from REAL PRODUCTS FOUND list>"
+        }
+      ]
     }
-  ]
-}
 
-═══════════════════════════════════════════════════════════════
-FINAL REMINDERS:
-═══════════════════════════════════════════════════════════════
+    ═══════════════════════════════════════════════════════════════
+    FINAL REMINDERS:
+    ═══════════════════════════════════════════════════════════════
 
-1. RESPOND ENTIRELY in the detected language from the product name
-2. PRIORITIZE LOCAL E-COMMERCE: ${localEcommerce[0]}, ${localEcommerce[1]}
-3. PROVIDE 4 ALTERNATIVES MINIMUM
-4. RETURN ONLY VALID JSON - NO MARKDOWN, NO COMMENTS
+    1. RESPOND ENTIRELY in the detected language from the product name
+    2. Use ONLY URLs from the "REAL PRODUCTS FOUND" list above
+    3. If no suitable products found, return empty alternatives array: []
+    4. RETURN ONLY VALID JSON - NO MARKDOWN, NO COMMENTS
 
-Begin analysis now.`;
+    Begin analysis now.`;
 
   try {
     const completion = await groq.chat.completions.create({
@@ -1900,45 +1712,20 @@ Begin analysis now.`;
     const validatedAlternatives = (result.alternatives || [])
       .map((alt) => {
         if (alt?.product_url && typeof alt.product_url === "string") {
-          // ✅ VALIDAÇÃO 1: Verificar se URL está na lista de URLs válidos do Tavily
+          // ✅ ADICIONADO TYPE CHECK
           const urlExists = validUrls.some(
             (validUrl) =>
               validUrl === alt.product_url ||
-              (alt.product_url && validUrl.includes(alt.product_url)) ||
-              (alt.product_url && alt.product_url.includes(validUrl))
+              (alt.product_url && validUrl.includes(alt.product_url)) || // ✅ NULL CHECK
+              (alt.product_url && alt.product_url.includes(validUrl)) // ✅ NULL CHECK
           );
-
-          // ✅ VALIDAÇÃO 2: Extrair domínio da URL
-          let domain = "";
-          try {
-            domain = new URL(alt.product_url).hostname.toLowerCase();
-          } catch (e) {
-            console.log(`⚠️ [VALIDATION] URL inválida: ${alt.product_url}`);
-            alt.product_url = null;
-            return alt;
-          }
-
-          // ✅ VALIDAÇÃO 3: Verificar se domínio pertence aos e-commerces do país do usuário
-          const countryDomains = COUNTRY_ECOMMERCE[userCountry]?.domains || [];
-          const isDomainAllowed = countryDomains.some((allowedDomain) =>
-            domain.includes(allowedDomain)
-          );
-
           if (!urlExists) {
             console.log(
-              `⚠️ [VALIDATION] URL não encontrada nos resultados do Tavily: ${alt.product_url}`
+              `⚠️ [VALIDATION] URL inventada removida: ${alt.product_url}`
             );
-            alt.product_url = null;
-          } else if (!isDomainAllowed) {
-            console.log(
-              `⚠️ [VALIDATION] Domínio '${domain}' não pertence aos e-commerces de ${userCountry}`
-            );
-            console.log(`   Domínios permitidos: ${countryDomains.join(", ")}`);
             alt.product_url = null;
           } else {
-            console.log(
-              `✅ [VALIDATION] URL válida e local: ${alt.product_url}`
-            );
+            console.log(`✅ [VALIDATION] URL válida: ${alt.product_url}`);
           }
         }
 
