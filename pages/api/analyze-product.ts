@@ -435,6 +435,7 @@ interface AnalysisResponse {
     tokensUsed?: number | string;
     tokensSaved?: string;
     cacheSize?: number;
+    duplicate?: boolean;  // ✅ ADICIONADO
   };
 }
 
@@ -975,13 +976,39 @@ export default async function handler(
         .json({ success: false, error: "productName is required" });
     }
 
+    // ════════════════════════════════════════════════════════════
+    // ✅ PROTEÇÃO CONTRA REQUESTS DUPLICADAS
+    // ════════════════════════════════════════════════════════════
+    const requestFingerprint = `${productName}:${userCountry}`.toLowerCase().replace(/\s+/g, '');
+    const requestId = `req:${requestFingerprint}`;
+
+    try {
+      const recentRequest = await redis.get<AnalysisResponse>(requestId);
+      
+      if (recentRequest) {
+        console.log("⚠️ [DUPLICATE] Request duplicada detectada, retornando cache");
+        return res.status(200).json({
+          ...recentRequest,
+          _meta: {
+            cached: true,
+            duplicate: true,
+            tokensUsed: recentRequest._meta?.tokensUsed,
+            tokensSaved: recentRequest._meta?.tokensSaved,
+            cacheSize: recentRequest._meta?.cacheSize,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("❌ [DUPLICATE] Erro ao verificar duplicata:", error);
+      // Continua com a análise normal se falhar
+    }
+
     console.log("📥 [ANALYZE] Request received:", {
       productName: productName,
       pageUrl: productInfo.pageUrl,
       userCountry: userCountry,
       timestamp: new Date().toISOString(),
     });
-
     // ════════════════════════════════════════════════════════════
     // ✅ STEP 1: CHECK CACHE FIRST (ANTES DE QUALQUER GROQ!)
     // ════════════════════════════════════════════════════════════
