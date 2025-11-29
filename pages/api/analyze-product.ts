@@ -1900,20 +1900,45 @@ Begin analysis now.`;
     const validatedAlternatives = (result.alternatives || [])
       .map((alt) => {
         if (alt?.product_url && typeof alt.product_url === "string") {
-          // ✅ ADICIONADO TYPE CHECK
+          // ✅ VALIDAÇÃO 1: Verificar se URL está na lista de URLs válidos do Tavily
           const urlExists = validUrls.some(
             (validUrl) =>
               validUrl === alt.product_url ||
-              (alt.product_url && validUrl.includes(alt.product_url)) || // ✅ NULL CHECK
-              (alt.product_url && alt.product_url.includes(validUrl)) // ✅ NULL CHECK
+              (alt.product_url && validUrl.includes(alt.product_url)) ||
+              (alt.product_url && alt.product_url.includes(validUrl))
           );
+
+          // ✅ VALIDAÇÃO 2: Extrair domínio da URL
+          let domain = "";
+          try {
+            domain = new URL(alt.product_url).hostname.toLowerCase();
+          } catch (e) {
+            console.log(`⚠️ [VALIDATION] URL inválida: ${alt.product_url}`);
+            alt.product_url = null;
+            return alt;
+          }
+
+          // ✅ VALIDAÇÃO 3: Verificar se domínio pertence aos e-commerces do país do usuário
+          const countryDomains = COUNTRY_ECOMMERCE[userCountry]?.domains || [];
+          const isDomainAllowed = countryDomains.some((allowedDomain) =>
+            domain.includes(allowedDomain)
+          );
+
           if (!urlExists) {
             console.log(
-              `⚠️ [VALIDATION] URL inventada removida: ${alt.product_url}`
+              `⚠️ [VALIDATION] URL não encontrada nos resultados do Tavily: ${alt.product_url}`
             );
             alt.product_url = null;
+          } else if (!isDomainAllowed) {
+            console.log(
+              `⚠️ [VALIDATION] Domínio '${domain}' não pertence aos e-commerces de ${userCountry}`
+            );
+            console.log(`   Domínios permitidos: ${countryDomains.join(", ")}`);
+            alt.product_url = null;
           } else {
-            console.log(`✅ [VALIDATION] URL válida: ${alt.product_url}`);
+            console.log(
+              `✅ [VALIDATION] URL válida e local: ${alt.product_url}`
+            );
           }
         }
 
