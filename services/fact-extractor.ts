@@ -117,9 +117,16 @@ IMPORTANT:
   });
 
   const content = completion.choices[0].message.content || '{}';
-  const facts = JSON.parse(content);
+  const rawFacts = JSON.parse(content);
+  const facts: ProductFacts = {} as ProductFacts;
 
-  console.log('✅ [GROQ] Facts extracted:', Object.keys(facts));
+  for (const [key, value] of Object.entries(rawFacts)) {
+    const normalizedKey = key.toLowerCase();
+    (facts as any)[normalizedKey] = value;
+  }
+
+  console.log('✅ [GROQ] Facts extracted:', Object.keys(rawFacts));
+  console.log('[FACT-EXTRACTOR] Facts normalizados:', Object.keys(facts));
 
   return facts as ProductFacts;
 }
