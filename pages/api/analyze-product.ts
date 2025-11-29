@@ -49,14 +49,21 @@ function getCacheKey(productName: string, userCountry: string, categoryKey: stri
   return `sicosi:${normalized}:${normalizedCategory}:${userCountry}`;
 }
 
-async function getCachedAnalysis(productName: string, userCountry: string, categoryKey: string) {
+async function getCachedAnalysis(
+  productName: string,
+  userCountry: string,
+  categoryKey: string,
+  userLanguage: string,
+  groqClient: Groq,
+) {
   try {
     const key = getCacheKey(productName, userCountry, categoryKey);
     const cached = await redis.get<any>(key);
 
     if (cached) {
       console.log(`✅ [CACHE] Redis HIT: ${key.substring(0, 50)}`);
-      return cached;
+      const translations = await generateTranslations(userLanguage || 'en', groqClient);
+      return { ...cached, translations };
     }
 
     console.log(`📭 [CACHE] Redis MISS: ${key.substring(0, 50)}`);
@@ -64,6 +71,95 @@ async function getCachedAnalysis(productName: string, userCountry: string, categ
   } catch (error) {
     console.error('❌ [CACHE] Redis error:', error);
     return null;
+  }
+}
+
+async function generateTranslations(
+  language: string,
+  groqClient: Groq,
+): Promise<Record<string, string>> {
+  const prompt = `You are a translation assistant. Translate the following UI labels to ${language}.
+
+LABELS TO TRANSLATE:
+- alternatives
+- viewProduct
+- searchGoogle
+- buyAnyway
+- toast (congratulations message for sustainable product)
+- close
+- sustainabilityScoreTitle
+- strengthsTitle
+- weaknessesTitle
+- recommendationsTitle
+- benefitsLabel
+- certificationsLabel
+- whereToBuyLabel
+- noAlternatives
+- noSummary
+- alternativeFallback
+- purchaseAllowed
+- offlineAnalysisWarning
+
+REQUIRED JSON RESPONSE FORMAT:
+{
+  "alternatives": "translated text",
+  "viewProduct": "translated text",
+  "searchGoogle": "translated text",
+  "buyAnyway": "translated text",
+  "toast": "🎉 translated congratulations message",
+  "close": "translated text",
+  "sustainabilityScoreTitle": "translated text",
+  "strengthsTitle": "translated text",
+  "weaknessesTitle": "translated text",
+  "recommendationsTitle": "translated text",
+  "benefitsLabel": "translated text",
+  "certificationsLabel": "translated text",
+  "whereToBuyLabel": "translated text",
+  "noAlternatives": "translated text",
+  "noSummary": "translated text",
+  "alternativeFallback": "translated text",
+  "purchaseAllowed": "translated text",
+  "offlineAnalysisWarning": "translated text"
+}
+
+IMPORTANT: Return ONLY valid JSON. Use the target language for all translations.`;
+
+  try {
+    const completion = await groqClient.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: 'llama-3.3-70b-versatile',
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
+    });
+
+    const content = completion.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error('Empty response from Groq');
+    }
+
+    return JSON.parse(content);
+  } catch (error) {
+    console.error('❌ [TRANSLATIONS] Error generating translations:', error);
+    return {
+      alternatives: 'Sustainable Alternatives',
+      viewProduct: 'View Product',
+      searchGoogle: 'Search on Google',
+      buyAnyway: 'Buy anyway',
+      toast: '🎉 Congratulations! This product is sustainable!',
+      close: 'Close',
+      sustainabilityScoreTitle: 'Sustainability Score',
+      strengthsTitle: 'Strengths',
+      weaknessesTitle: 'Weaknesses',
+      recommendationsTitle: 'Recommendations',
+      benefitsLabel: 'Benefits:',
+      certificationsLabel: 'Certifications:',
+      whereToBuyLabel: 'Where to buy:',
+      noAlternatives: 'No alternatives available',
+      noSummary: 'Summary not available',
+      alternativeFallback: 'Alternative',
+      purchaseAllowed: 'Purchase allowed',
+      offlineAnalysisWarning: 'Offline analysis - limited data',
+    };
   }
 }
 
@@ -508,7 +604,13 @@ export default async function handler(
       categoryFromFrontend && availableCategories.includes(categoryFromFrontend)
         ? categoryFromFrontend
         : 'auto';
-    const cached = await getCachedAnalysis(productName, userCountry, cacheKeyCategory);
+    const cached = await getCachedAnalysis(
+      productName,
+      userCountry,
+      cacheKeyCategory,
+      userLanguage,
+      groqClient,
+    );
     if (cached) {
       return res.status(200).json({ ...cached, _meta: { cached: true } });
     }
@@ -657,48 +759,43 @@ export default async function handler(
         : altSearchResults.results || [];
 
       if (altResultsForPrompt.length) {
-        const prompt = `You are a sustainable purchasing assistant. Suggest up to 4 alternatives for the product using ONLY the real search results below.
+        const prompt = `You are a sustainable purchasing assistant analyzing a product with sustainability score ${scoreResult.finalScore}/100.
 
-REAL PRODUCTS FOUND:
+REAL PRODUCTS FOUND (from web search):
 ${altResultsForPrompt
   .map(
     (r: any, i: number) => `${i + 1}. ${r.title}\nURL: ${r.url}\nSnippet: ${(r.snippet || '').substring(0, 180)}`,
   )
   .join('\n\n')}
 
-IMPORTANT:
-- Suggest ONLY products that appear in the REAL PRODUCTS FOUND list above
-- Use the exact URLs from the search results
-- If no suitable alternatives found, return empty array
+YOUR TASK:
+The original product scored ${scoreResult.finalScore}/100 (below the 70 threshold).
+You MUST suggest exactly 4 sustainable alternatives from the REAL PRODUCTS FOUND list above.
 
-════════════════════════════════════════════════════════════════
-ALTERNATIVES LOGIC (CRITICAL):
-════════════════════════════════════════════════════════════════
+REQUIREMENTS:
+1. Use ONLY products from the REAL PRODUCTS FOUND list
+2. Use the exact URLs from the search results
+3. Each alternative should have estimated sustainability_score >= 70
+4. Respond in the same language as the product name: "${productName}"
+5. If a product from the list doesn't have a direct URL, set product_url to null
+6. You MUST return exactly 4 alternatives (or as many as available from the list, minimum 1)
 
-Original product sustainability_score: ${scoreResult.finalScore}
-Calculate originalProduct.sustainability_score FIRST
-IF score < 70:
-Product is NOT sustainable
-MUST provide exactly 4 sustainable alternatives
-Each alternative MUST have score >= 70
-Use ONLY URLs from REAL PRODUCTS FOUND list above
-Respond in same language as product name
-IF score >= 70:
-Product IS sustainable
-Return empty array: "alternatives": []
+REQUIRED JSON RESPONSE FORMAT:
+{
+  "alternatives": [
+    {
+      "name": "Product name from search results",
+      "description": "Why this is a sustainable alternative",
+      "benefits": "Key sustainability benefits",
+      "sustainability_score": 75,
+      "where_to_buy": "Store name or region",
+      "certifications": ["cert1", "cert2"],
+      "product_url": "exact URL from search results or null"
+    }
+  ]
+}
 
- REQUIRED JSON RESPONSE FORMAT:
-[
-  {
-    "name": "Product name",
-    "description": "Why this is a sustainable alternative (PT-BR)",
-    "benefits": "Key sustainability benefits (PT-BR)",
-    "sustainability_score": 0,
-    "where_to_buy": "URL",
-    "certifications": ["cert1", "cert2"],
-    "product_url": "URL"
-  }
-]`;
+IMPORTANT: Return a JSON object with "alternatives" array, NOT a plain array.`;
 
         const completion = await groqClient.chat.completions.create({
           messages: [{ role: 'user', content: prompt }],
@@ -707,8 +804,9 @@ Return empty array: "alternatives": []
           response_format: { type: 'json_object' },
         });
 
-        const parsedAlternatives = JSON.parse(completion.choices[0].message.content || '[]');
-        alternatives = Array.isArray(parsedAlternatives) ? parsedAlternatives : [];
+        const parsedAlternatives = JSON.parse(completion.choices[0].message.content || '{}');
+        const parsedArray = (parsedAlternatives as any)?.alternatives;
+        alternatives = Array.isArray(parsedArray) ? parsedArray : [];
       }
 
       console.log(`✅ [ALTERNATIVES] Found ${alternatives.length} alternatives`);
@@ -718,6 +816,8 @@ Return empty array: "alternatives": []
     // STEP 8: MONTAR RESPOSTA FINAL
     // ════════════════════════════════════════════════════════════
     const validatedAlternatives = alternatives;
+
+    const translations = await generateTranslations(userLanguage || 'en', groqClient);
 
     const responsePayload = {
       success: true,
@@ -757,6 +857,7 @@ Return empty array: "alternatives": []
         recommendations: texts.recommendations,
       },
       alternatives: validatedAlternatives,
+      translations,
       _meta: {
         cached: cached || false,
       },
