@@ -18,6 +18,7 @@ interface AnalysisRequest {
   pageTitle?: string;
   description?: string;
   userCountry?: string;
+  userLanguage?: string;
   category?: string;
 }
 
@@ -478,6 +479,7 @@ export default async function handler(
   const pageTitle = productInfo.pageTitle || body.pageTitle || '';
   const description = productInfo.description || body.description || '';
   const userCountry = (body.userCountry || productInfo.userCountry || 'US').toUpperCase();
+  const userLanguage = body.userLanguage || productInfo.userLanguage || 'pt-BR';
   const categoryFromFrontend = body.category || null;
 
   if (categoryFromFrontend) {
@@ -608,6 +610,8 @@ export default async function handler(
       scoreResult.finalScore,
       scoreResult.breakdown,
       facts,
+      userLanguage,
+      userCountry,
     );
 
     console.log('✅ [TEXT] Texts generated');

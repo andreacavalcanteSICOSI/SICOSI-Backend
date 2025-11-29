@@ -151,7 +151,9 @@ export async function generateDescriptiveTexts(
   category: string,
   finalScore: number,
   breakdown: any,
-  facts: ProductFacts
+  facts: ProductFacts,
+  userLanguage: string = 'en-US',
+  userCountry: string = 'US'
 ): Promise<{
   summary: string;
   strengths: string[];
@@ -159,6 +161,8 @@ export async function generateDescriptiveTexts(
   recommendations: string[];
 }> {
   const prompt = `You are a sustainability analyst. Generate a report for this product.
+
+IMPORTANT: Respond in ${userLanguage}. User is from ${userCountry}.
 
 PRODUCT: ${productName}
 CATEGORY: ${category}
