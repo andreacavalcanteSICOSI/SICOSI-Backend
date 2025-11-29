@@ -15,6 +15,8 @@ interface AnalysisRequest {
   productName?: string;
   product_url?: string;
   pageUrl?: string;
+  pageTitle?: string;
+  description?: string;
   userCountry?: string;
   category?: string;
 }
