@@ -657,7 +657,7 @@ export default async function handler(
         : altSearchResults.results || [];
 
       if (altResultsForPrompt.length) {
-        const prompt = `You are a sustainable purchasing assistant. Suggest up to 3 alternatives for the product using ONLY the real search results below.
+        const prompt = `You are a sustainable purchasing assistant. Suggest up to 4 alternatives for the product using ONLY the real search results below.
 
 REAL PRODUCTS FOUND:
 ${altResultsForPrompt
@@ -671,7 +671,23 @@ IMPORTANT:
 - Use the exact URLs from the search results
 - If no suitable alternatives found, return empty array
 
-Return JSON with this structure:
+════════════════════════════════════════════════════════════════
+ALTERNATIVES LOGIC (CRITICAL):
+════════════════════════════════════════════════════════════════
+
+Original product sustainability_score: ${scoreResult.finalScore}
+Calculate originalProduct.sustainability_score FIRST
+IF score < 70:
+Product is NOT sustainable
+MUST provide exactly 4 sustainable alternatives
+Each alternative MUST have score >= 70
+Use ONLY URLs from REAL PRODUCTS FOUND list above
+Respond in same language as product name
+IF score >= 70:
+Product IS sustainable
+Return empty array: "alternatives": []
+
+ REQUIRED JSON RESPONSE FORMAT:
 [
   {
     "name": "Product name",
