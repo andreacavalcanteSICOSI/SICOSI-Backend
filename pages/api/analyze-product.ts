@@ -759,46 +759,79 @@ export default async function handler(
         : altSearchResults.results || [];
 
       if (altResultsForPrompt.length) {
-        const prompt = `You are a sustainable purchasing assistant analyzing a product with sustainability score ${scoreResult.finalScore}/100.
+        const tavilyResults = { results: altResultsForPrompt };
+        const alternativesPrompt = `You are a sustainability expert.
 
-REAL PRODUCTS FOUND (from web search):
-${altResultsForPrompt
+ORIGINAL PRODUCT (DO NOT SUGGEST THIS):
+- Exact Name: ${productName}
+- Brand: ${productName.split(' ')[0]} (extract brand if possible)
+- Score: ${scoreResult.finalScore}/100
+- Category: ${category}
+- Language: ${userLanguage}
+
+CRITICAL: You must NOT suggest the same product from a different store!
+A product is considered "the same" if it has:
+- Same brand name
+- Same product type
+- Same or similar quantity/size
+
+SEARCH RESULTS FROM WEB:
+${tavilyResults.results
+  .slice(0, 10)
   .map(
-    (r: any, i: number) => `${i + 1}. ${r.title}\nURL: ${r.url}\nSnippet: ${(r.snippet || '').substring(0, 180)}`,
+    (r: any, i: number) => `
+${i + 1}. Title: ${r.title}
+   URL: ${r.url}
+   Content: ${r.content?.substring(0, 300) || 'N/A'}`,
   )
-  .join('\n\n')}
+  .join('\n')}
 
-YOUR TASK:
-The original product scored ${scoreResult.finalScore}/100 (below the 70 threshold).
-You MUST suggest exactly 4 sustainable alternatives from the REAL PRODUCTS FOUND list above.
+TASK:
+Analyze the search results and return EXACTLY 4 DIFFERENT sustainable alternatives that are:
 
-REQUIREMENTS:
-1. Use ONLY products from the REAL PRODUCTS FOUND list
-2. Use the exact URLs from the search results
-3. Each alternative should have estimated sustainability_score >= 70
-4. Respond in the same language as the product name: "${productName}"
-5. If a product from the list doesn't have a direct URL, set product_url to null
-6. You MUST return exactly 4 alternatives (or as many as available from the list, minimum 1)
+1. ✅ DIFFERENT products (different brand OR different type OR eco-friendly version)
+2. ✅ More sustainable (score >= 70)
+3. ✅ Same category as original
+4. ✅ Use ONLY real URLs from search results above
+5. ✅ Available in country: ${userCountry}
 
-REQUIRED JSON RESPONSE FORMAT:
+EXAMPLES OF VALID ALTERNATIVES for "Cotonetes Johnson & Johnson":
+✅ "Cotonetes de Bambu Reutilizáveis" (different material)
+✅ "Hastes Flexíveis Orgânicas Certificadas" (different brand + eco)
+✅ "Cotonetes Biodegradáveis 100% Algodão" (eco-friendly version)
+
+EXAMPLES OF INVALID ALTERNATIVES:
+❌ "Cotonetes Johnson & Johnson" (same product, different store)
+❌ "Hastes Flexíveis Johnson & Johnson" (same brand, same product)
+❌ "Johnson & Johnson Cotton Swabs" (same product, different language)
+
+VALIDATION RULES:
+- If search results only show the same product in different stores → return empty array
+- If you find fewer than 4 valid alternatives → return only the valid ones
+- Minimum 2 alternatives required, otherwise return []
+- Each alternative MUST be a genuinely different product
+
+RESPONSE FORMAT (JSON):
 {
   "alternatives": [
     {
-      "name": "Product name from search results",
-      "description": "Why this is a sustainable alternative",
-      "benefits": "Key sustainability benefits",
-      "sustainability_score": 75,
-      "where_to_buy": "Store name or region",
-      "certifications": ["cert1", "cert2"],
-      "product_url": "exact URL from search results or null"
+      "name": "Product name in ${userLanguage}",
+      "description": "Brief description in ${userLanguage}",
+      "sustainability_score": 85,
+      "benefits": "Environmental benefits in ${userLanguage}",
+      "certifications": ["ISO 14001", "FSC"],
+      "product_url": "REAL URL from Tavily results",
+      "where_to_buy": "Store name",
+      "category": "${category}"
     }
   ]
 }
 
-IMPORTANT: Return a JSON object with "alternatives" array, NOT a plain array.`;
+RESPOND IN LANGUAGE: ${userLanguage}
+`;
 
         const completion = await groqClient.chat.completions.create({
-          messages: [{ role: 'user', content: prompt }],
+          messages: [{ role: 'user', content: alternativesPrompt }],
           model: 'llama-3.3-70b-versatile',
           temperature: 0.2,
           response_format: { type: 'json_object' },
@@ -815,7 +848,33 @@ IMPORTANT: Return a JSON object with "alternatives" array, NOT a plain array.`;
     // ════════════════════════════════════════════════════════════
     // STEP 8: MONTAR RESPOSTA FINAL
     // ════════════════════════════════════════════════════════════
-    const validatedAlternatives = alternatives;
+    const originalBrand = productName.toLowerCase().split(' ')[0];
+    const originalKeywords = productName
+      .toLowerCase()
+      .split(' ')
+      .filter((w) => w.length > 3);
+
+    let validatedAlternatives = alternatives.filter((alt) => {
+      const altName = (alt.name || '').toLowerCase();
+
+      const hasSameBrand = altName.includes(originalBrand);
+      const similarKeywords = originalKeywords.filter((kw) => altName.includes(kw));
+      const isSameProduct = hasSameBrand && similarKeywords.length >= 2;
+
+      if (isSameProduct) {
+        console.warn('⚠️ PRODUTO DUPLICADO REMOVIDO:', alt.name);
+        return false;
+      }
+
+      return true;
+    });
+
+    console.log('✅ Alternativas após filtro de duplicados:', validatedAlternatives.length);
+
+    if (validatedAlternatives.length < 2) {
+      console.warn('⚠️ Poucas alternativas válidas, retornando vazio');
+      validatedAlternatives = [];
+    }
 
     const translations = await generateTranslations(userLanguage || 'en', groqClient);
 
