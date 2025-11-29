@@ -65,6 +65,71 @@ function getLanguageFromCountry(countryCode: string): string {
   return `${countryCode.toLowerCase()}-${countryCode}`;
 }
 
+/**
+ * Get localized congratulations message for sustainable products using Groq
+ * @param {string} productName - Product name to detect language
+ * @returns {Promise<string>} - Localized message
+ */
+async function getSustainableProductMessage(productName: string): Promise<string> {
+  const groqApiKey = process.env.GROQ_API_KEY;
+  if (!groqApiKey) {
+    // Fallback if no API key
+    return "Congratulations! You've already chosen a sustainable product! 🌱";
+  }
+
+  try {
+    const groq = new Groq({ apiKey: groqApiKey });
+    
+    const prompt = `Detect the language of this product name and generate a congratulations message in that EXACT language:
+
+Product name: "${productName}"
+
+Generate a short, friendly congratulations message saying the user has already chosen a sustainable product. Include the 🌱 emoji at the end.
+
+CRITICAL RULES:
+1. Detect the language from the product name automatically
+2. Respond in the SAME language as the product name
+3. Keep it short (one sentence, max 15 words)
+4. Be enthusiastic and positive
+5. Include 🌱 emoji at the end
+6. Return ONLY the message, nothing else
+
+Examples:
+- If product is in Portuguese: "Parabéns! Você já escolheu um produto sustentável! 🌱"
+- If product is in Japanese: "おめでとうございます！すでに持続可能な製品を選択しています！🌱"
+- If product is in German: "Glückwunsch! Sie haben bereits ein nachhaltiges Produkt gewählt! 🌱"
+- If product is in Spanish: "¡Felicitaciones! ¡Ya elegiste un producto sostenible! 🌱"
+
+Now generate the message:`;
+
+    const completion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: "system",
+          content: "You are a language expert. Detect language and respond in that language. Return only the congratulations message, nothing else.",
+        },
+        { role: "user", content: prompt },
+      ],
+      model: config.groq.defaultModel,
+      temperature: 0.3,
+      max_tokens: 50,
+    });
+
+    const message = completion.choices[0]?.message?.content?.trim();
+    
+    if (message && message.length > 0 && message.length < 200) {
+      console.log(`💬 [MESSAGE] Generated localized message: ${message}`);
+      return message;
+    }
+
+    // Fallback
+    return "Congratulations! You've already chosen a sustainable product! 🌱";
+  } catch (error) {
+    console.error("❌ [MESSAGE] Error generating message:", error);
+    return "Congratulations! You've already chosen a sustainable product! 🌱";
+  }
+}
+
 // Cross-validate country using multiple signals
 function validateAndCorrectCountry(
   userCountry: string,
@@ -428,6 +493,8 @@ interface AnalysisResponse {
   category?: string;
   originalProduct?: OriginalProduct;
   alternatives?: Alternative[];
+  isAlreadySustainable?: boolean;  // ✅ Flag for sustainable products
+  sustainableMessage?: string;  // ✅ NEW: Localized message for sustainable products
   timestamp?: string;
   error?: string;
   _meta?: {
@@ -435,7 +502,7 @@ interface AnalysisResponse {
     tokensUsed?: number | string;
     tokensSaved?: string;
     cacheSize?: number;
-    duplicate?: boolean;  // ✅ ADICIONADO
+    duplicate?: boolean;
   };
 }
 
@@ -1022,6 +1089,10 @@ export default async function handler(
       );
 
       // Retorna imediatamente sem chamar Groq
+      const SUSTAINABLE_THRESHOLD = 70;
+      const isAlreadySustainable = cachedAnalysis.originalProduct.sustainability_score >= SUSTAINABLE_THRESHOLD;
+      const sustainableMessage = isAlreadySustainable ? await getSustainableProductMessage(productName) : undefined;
+      
       return res.status(200).json({
         success: true,
         productInfo: {
@@ -1033,6 +1104,8 @@ export default async function handler(
         category: cachedAnalysis.originalProduct.category,
         originalProduct: cachedAnalysis.originalProduct,
         alternatives: cachedAnalysis.alternatives,
+        isAlreadySustainable: isAlreadySustainable,
+        sustainableMessage: sustainableMessage,
         timestamp: new Date().toISOString(),
         _meta: {
           cached: true,
@@ -1188,6 +1261,17 @@ export default async function handler(
     // ════════════════════════════════════════════════════════════
     // STEP 7: RETORNAR RESULTADO
     // ════════════════════════════════════════════════════════════
+    
+    // ✅ Check if product is already sustainable
+    const SUSTAINABLE_THRESHOLD = 70;
+    const isAlreadySustainable = analysis.originalProduct.sustainability_score >= SUSTAINABLE_THRESHOLD;
+    const sustainableMessage = isAlreadySustainable ? await getSustainableProductMessage(productName) : undefined;
+    
+    if (isAlreadySustainable) {
+      console.log(`🌱 [SUSTAINABLE] Product already sustainable! Score: ${analysis.originalProduct.sustainability_score}`);
+      console.log(`💬 [MESSAGE] Localized message (${userCountry}): ${sustainableMessage}`);
+    }
+    
     const response: AnalysisResponse = {
       success: true,
       productInfo: {
@@ -1199,6 +1283,8 @@ export default async function handler(
       category: category,
       originalProduct: analysis.originalProduct,
       alternatives: analysis.alternatives,
+      isAlreadySustainable: isAlreadySustainable,  // ✅ Flag for frontend
+      sustainableMessage: sustainableMessage,  // ✅ NEW: Localized message
       timestamp: new Date().toISOString(),
       _meta: {
         cached: false,
@@ -1210,6 +1296,7 @@ export default async function handler(
       success: true,
       category: category,
       alternativesCount: analysis.alternatives.length,
+      isAlreadySustainable: isAlreadySustainable,
       timestamp: response.timestamp,
     });
 
@@ -1246,7 +1333,7 @@ async function searchRealProducts(
 
   try {
     let results = await webSearchClient.search(query, {
-      maxResults: 50,
+      maxResults: 100,
       searchDepth: "advanced",
       includeAnswer: false,
     });
@@ -1264,7 +1351,7 @@ async function searchRealProducts(
       console.log("🔎 [SEARCH] Query (broad):", fallbackQuery);
 
       results = await webSearchClient.search(fallbackQuery, {
-        maxResults: 50,
+        maxResults: 100,
         searchDepth: "advanced",
         includeAnswer: false,
       });
@@ -1355,7 +1442,7 @@ async function searchRealProducts(
       new Map(validProducts.map((p) => [p.url, p])).values()
     );
 
-    const limited = unique.slice(0, 10);
+    const limited = unique.slice(0, 20);
 
     console.log(
       `✅ [SEARCH] Returning ${limited.length} products after dedupe/limit`
@@ -1667,34 +1754,47 @@ async function analyzeWithGroq(
     CRITICAL INSTRUCTIONS - READ CAREFULLY:
     ═══════════════════════════════════════════════════════════════
 
-    1. PRODUCT MATCHING:
+    1. MINIMUM ALTERNATIVES REQUIRED:
+      - You MUST provide AT LEAST 4 sustainable alternatives
+      - If you cannot find 4 alternatives from the search results, you have failed
+      - Look through ALL products in "REAL PRODUCTS FOUND" to find 4 valid options
+
+    2. PRODUCT MATCHING:
       - Suggest ONLY products that appear in the "REAL PRODUCTS FOUND" list above
       - Match products by name and description from the search results
       - Each alternative MUST correspond to one of the numbered items above
 
-    2. URL USAGE:
-      - Use the EXACT URL from the search results (copy it exactly as shown)
-      - DO NOT modify, shorten, or create new URLs
-      - If you cannot match a sustainable product from the list, DO NOT include it
-      - Better to return fewer alternatives than to invent URLs
+    3. URL USAGE (CRITICAL - DO NOT VIOLATE):
+      - Use the EXACT URL from the search results (copy it character-by-character)
+      - DO NOT modify, shorten, or create new URLs under ANY circumstances
+      - DO NOT invent URLs even if you know the product exists
+      - DO NOT use placeholder URLs like "example.com" or "store.com"
+      - If a product from the list doesn't have a clear URL, skip it and find another
+      - EVERY alternative MUST have a real, working URL from the search results
 
-    3. FALLBACK:
-      - If NO suitable sustainable alternatives found in the search results, return empty alternatives array: []
-      - DO NOT suggest products that are not in the search results
+    4. VALIDATION CHECKLIST (Check each alternative):
+      ✓ Does this product appear in "REAL PRODUCTS FOUND"? (If NO, remove it)
+      ✓ Is the URL copied exactly from the search results? (If NO, remove it)
+      ✓ Is the URL from a store in ${userCountry}? (If NO, remove it)
+      ✓ Is the sustainability_score >= 70? (If NO, remove it)
+      ✓ Is it the same product type as the original? (If NO, remove it)
 
-    4. VALIDATION:
-      - Before adding an alternative, verify its number (1, 2, 3...) exists in "REAL PRODUCTS FOUND"
-      - Copy the exact URL shown after "URL:" for that product
+    5. COUNTRY VERIFICATION:
+      - ALL product URLs MUST be from stores that operate in ${userCountry}
+      - Check the domain: ${localEcommerce.slice(0, 3).join(", ")}
+      - If a URL is from a different country, DO NOT include it
 
     ═══════════════════════════════════════════════════════════════
-    VALIDATION RULES:
+    VALIDATION RULES (MANDATORY):
     ═══════════════════════════════════════════════════════════════
 
     1. Alternatives MUST be the SAME product type as the original
-    2. Suggest up to 4 sustainable alternatives (or fewer if search results are limited)
-    3. Each alternative must have sustainability_score >= 70
+    2. You MUST provide AT LEAST 4 sustainable alternatives (REQUIRED)
+    3. Each alternative MUST have sustainability_score >= 70
     4. Use ONLY products from the "REAL PRODUCTS FOUND" list
-    5. If no suitable products found in search results, return empty alternatives array: []
+    5. Use ONLY exact URLs from the search results
+    6. ALL URLs must be from stores in ${userCountry}
+    7. If you cannot find 4 valid alternatives, review the list again more carefully
 
     ═══════════════════════════════════════════════════════════════
     REQUIRED JSON RESPONSE FORMAT:
@@ -1770,20 +1870,49 @@ async function analyzeWithGroq(
     const validatedAlternatives = (result.alternatives || [])
       .map((alt) => {
         if (alt?.product_url && typeof alt.product_url === "string") {
-          // ✅ ADICIONADO TYPE CHECK
+          // ✅ Check if URL exists in Tavily results
           const urlExists = validUrls.some(
             (validUrl) =>
               validUrl === alt.product_url ||
-              (alt.product_url && validUrl.includes(alt.product_url)) || // ✅ NULL CHECK
-              (alt.product_url && alt.product_url.includes(validUrl)) // ✅ NULL CHECK
+              (alt.product_url && validUrl.includes(alt.product_url)) ||
+              (alt.product_url && alt.product_url.includes(validUrl))
           );
+
           if (!urlExists) {
             console.log(
-              `⚠️ [VALIDATION] URL inventada removida: ${alt.product_url}`
+              `⚠️ [VALIDATION] URL not in Tavily results, removed: ${alt.product_url}`
             );
             alt.product_url = null;
-          } else {
-            console.log(`✅ [VALIDATION] URL válida: ${alt.product_url}`);
+            return alt;
+          }
+
+          // ✅ NEW: Verify URL is from user's country
+          try {
+            const urlObj = new URL(alt.product_url);
+            const hostname = urlObj.hostname.toLowerCase();
+            const countryData = COUNTRY_ECOMMERCE[userCountry] || COUNTRY_ECOMMERCE["US"];
+            const allowedDomains = countryData.domains.map(d => d.toLowerCase());
+            const countryName = countryData.name.toLowerCase();
+
+            const isFromCorrectCountry = 
+              allowedDomains.some(domain => hostname.includes(domain)) ||
+              hostname.includes(countryName);
+
+            if (!isFromCorrectCountry) {
+              console.log(
+                `⚠️ [VALIDATION] URL not from ${userCountry}, removed: ${alt.product_url}`
+              );
+              alt.product_url = null;
+              return alt;
+            }
+
+            console.log(`✅ [VALIDATION] Valid URL from ${userCountry}: ${alt.product_url}`);
+          } catch (error) {
+            console.log(
+              `⚠️ [VALIDATION] Invalid URL format, removed: ${alt.product_url}`
+            );
+            alt.product_url = null;
+            return alt;
           }
         }
 
@@ -1810,7 +1939,9 @@ async function analyzeWithGroq(
         return true;
       });
 
-    if (validatedAlternatives.length === 0) {
+    // ✅ Ensure minimum 4 alternatives
+    const MIN_ALTERNATIVES = 4;
+    if (validatedAlternatives.length < MIN_ALTERNATIVES) {
       const countryContext =
         COUNTRY_ECOMMERCE[userCountry] || COUNTRY_ECOMMERCE["US"];
       const productTypeFallback = productType || "product";
@@ -1819,17 +1950,22 @@ async function analyzeWithGroq(
         googleQueryText
       )}`;
 
-      validatedAlternatives.push({
-        name: `Search sustainable alternatives on Google`,
-        description: `We couldn't find specific products, but you can search for sustainable alternatives here`,
-        benefits: `Find sustainable options available in ${countryContext.name}`,
-        sustainability_score: 0,
-        where_to_buy: `Google Search`,
-        certifications: [],
-        product_url: googleSearchUrl,
-      });
+      const needed = MIN_ALTERNATIVES - validatedAlternatives.length;
+      console.log(`⚠️ [FALLBACK] Only ${validatedAlternatives.length} alternatives found, adding ${needed} Google search links`);
 
-      console.log(`🔍 [FALLBACK] Added Google search link`);
+      for (let i = 0; i < needed; i++) {
+        validatedAlternatives.push({
+          name: `Search more sustainable alternatives`,
+          description: `We couldn't find enough specific products, but you can search for sustainable alternatives here`,
+          benefits: `Find sustainable ${productTypeFallback} options available in ${countryContext.name}`,
+          sustainability_score: 0,
+          where_to_buy: `Google Search`,
+          certifications: [],
+          product_url: googleSearchUrl,
+        });
+      }
+
+      console.log(`🔍 [FALLBACK] Added ${needed} Google search link(s) to reach minimum ${MIN_ALTERNATIVES} alternatives`);
     }
 
     result.alternatives = validatedAlternatives;
