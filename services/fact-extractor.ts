@@ -117,9 +117,27 @@ IMPORTANT:
   });
 
   const content = completion.choices[0].message.content || '{}';
-  const facts = JSON.parse(content);
+  const rawFacts = JSON.parse(content);
 
-  console.log('✅ [GROQ] Facts extracted:', Object.keys(facts));
+  const normalizeKeysToLower = (value: any): any => {
+    if (Array.isArray(value)) {
+      return value.map(normalizeKeysToLower);
+    }
+
+    if (value && typeof value === 'object') {
+      return Object.entries(value).reduce((acc: Record<string, any>, [key, val]) => {
+        acc[key.toLowerCase()] = normalizeKeysToLower(val);
+        return acc;
+      }, {});
+    }
+
+    return value;
+  };
+
+  const facts = normalizeKeysToLower(rawFacts) as ProductFacts;
+
+  console.log('✅ [GROQ] Facts extracted:', Object.keys(rawFacts));
+  console.log('[FACT-EXTRACTOR] Facts normalizados:', Object.keys(facts));
 
   return facts as ProductFacts;
 }
