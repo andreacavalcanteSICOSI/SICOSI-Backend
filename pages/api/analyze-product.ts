@@ -1,41 +1,11 @@
 // pages/api/analyze-product.ts
+
 import type { NextApiRequest, NextApiResponse } from 'next';
 import Groq from 'groq-sdk';
-import { Redis } from '@upstash/redis';
-import tavily from '@tavily/core';
 import alternativesData from '../../data/alternatives.json';
 import config from '../../config';
 import webSearchClient from '../../services/web-search-client';
-import { AlternativesConfig, CategoryConfig } from '../../types';
-import { calculateSustainabilityScore, ProductFacts } from '../../services/scoring-engine';
-import { extractProductFacts, generateDescriptiveTexts } from '../../services/fact-extractor';
-
-interface AnalysisRequest {
-  productInfo?: Record<string, any>;
-  product_name?: string;
-  productName?: string;
-  product_url?: string;
-  pageUrl?: string;
-  pageTitle?: string;
-  description?: string;
-  userCountry?: string;
-  userLanguage?: string;
-  category?: string;
-}
-
-interface ProductInfo {
-  productName?: string;
-  product_name?: string;
-  pageTitle?: string;
-  description?: string;
-  pageUrl?: string;
-  selectedText?: string;
-  userCountry?: string;
-  category?: string;
-  [key: string]: any;
-}
-
-const alternativesConfig = alternativesData as AlternativesConfig;
+import { Redis } from '@upstash/redis';
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL!,
@@ -44,27 +14,19 @@ const redis = new Redis({
 
 const CACHE_TTL_SECONDS = 24 * 60 * 60; // 24 horas
 
-function getCacheKey(productName: string, userCountry: string, categoryKey: string): string {
+function getCacheKey(productName: string, userCountry: string): string {
   const normalized = productName.toLowerCase().trim().replace(/\s+/g, ' ');
-  const normalizedCategory = (categoryKey || 'auto').toLowerCase();
-  return `sicosi:${normalized}:${normalizedCategory}:${userCountry}`;
+  return `sicosi:${normalized}:${userCountry}`;
 }
 
-async function getCachedAnalysis(
-  productName: string,
-  userCountry: string,
-  categoryKey: string,
-  userLanguage: string,
-  groqClient: Groq,
-) {
+async function getCachedAnalysis(productName: string, userCountry: string): Promise<GroqAnalysisResult | null> {
   try {
-    const key = getCacheKey(productName, userCountry, categoryKey);
-    const cached = await redis.get<any>(key);
+    const key = getCacheKey(productName, userCountry);
+    const cached = await redis.get<GroqAnalysisResult>(key);
 
     if (cached) {
       console.log(`✅ [CACHE] Redis HIT: ${key.substring(0, 50)}`);
-      const translations = await generateTranslations(userLanguage || 'en', groqClient);
-      return { ...cached, translations };
+      return cached;
     }
 
     console.log(`📭 [CACHE] Redis MISS: ${key.substring(0, 50)}`);
@@ -75,103 +37,9 @@ async function getCachedAnalysis(
   }
 }
 
-async function generateTranslations(
-  language: string,
-  groqClient: Groq,
-): Promise<Record<string, string>> {
-  const prompt = `You are a translation assistant. Translate the following UI labels to ${language}.
-
-LABELS TO TRANSLATE:
-- alternatives
-- viewProduct
-- searchGoogle
-- buyAnyway
-- toast (congratulations message for sustainable product)
-- close
-- sustainabilityScoreTitle
-- strengthsTitle
-- weaknessesTitle
-- recommendationsTitle
-- benefitsLabel
-- certificationsLabel
-- whereToBuyLabel
-- noAlternatives
-- noSummary
-- alternativeFallback
-- purchaseAllowed
-- offlineAnalysisWarning
-
-REQUIRED JSON RESPONSE FORMAT:
-{
-  "alternatives": "translated text",
-  "viewProduct": "translated text",
-  "searchGoogle": "translated text",
-  "buyAnyway": "translated text",
-  "toast": "🎉 translated congratulations message",
-  "close": "translated text",
-  "sustainabilityScoreTitle": "translated text",
-  "strengthsTitle": "translated text",
-  "weaknessesTitle": "translated text",
-  "recommendationsTitle": "translated text",
-  "benefitsLabel": "translated text",
-  "certificationsLabel": "translated text",
-  "whereToBuyLabel": "translated text",
-  "noAlternatives": "translated text",
-  "noSummary": "translated text",
-  "alternativeFallback": "translated text",
-  "purchaseAllowed": "translated text",
-  "offlineAnalysisWarning": "translated text"
-}
-
-IMPORTANT: Return ONLY valid JSON. Use the target language for all translations.`;
-
+async function setCachedAnalysis(productName: string, userCountry: string, result: GroqAnalysisResult): Promise<void> {
   try {
-    const completion = await groqClient.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
-      model: 'llama-3.3-70b-versatile',
-      temperature: 0.1,
-      response_format: { type: 'json_object' },
-    });
-
-    const content = completion.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error('Empty response from Groq');
-    }
-
-    return JSON.parse(content);
-  } catch (error) {
-    console.error('❌ [TRANSLATIONS] Error generating translations:', error);
-    return {
-      alternatives: 'Sustainable Alternatives',
-      viewProduct: 'View Product',
-      searchGoogle: 'Search on Google',
-      buyAnyway: 'Buy anyway',
-      toast: '🎉 Congratulations! This product is sustainable!',
-      close: 'Close',
-      sustainabilityScoreTitle: 'Sustainability Score',
-      strengthsTitle: 'Strengths',
-      weaknessesTitle: 'Weaknesses',
-      recommendationsTitle: 'Recommendations',
-      benefitsLabel: 'Benefits:',
-      certificationsLabel: 'Certifications:',
-      whereToBuyLabel: 'Where to buy:',
-      noAlternatives: 'No alternatives available',
-      noSummary: 'Summary not available',
-      alternativeFallback: 'Alternative',
-      purchaseAllowed: 'Purchase allowed',
-      offlineAnalysisWarning: 'Offline analysis - limited data',
-    };
-  }
-}
-
-async function setCachedAnalysis(
-  productName: string,
-  userCountry: string,
-  categoryKey: string,
-  result: any,
-): Promise<void> {
-  try {
-    const key = getCacheKey(productName, userCountry, categoryKey);
+    const key = getCacheKey(productName, userCountry);
     await redis.set(key, result, { ex: CACHE_TTL_SECONDS });
     console.log(`💾 [CACHE] Redis SAVED: ${key.substring(0, 50)} (TTL: 24h)`);
   } catch (error) {
@@ -179,64 +47,350 @@ async function setCachedAnalysis(
   }
 }
 
-function getTextProcessingConfig() {
+/**
+ * Map ISO country code to language/locale
+ * @param {string} countryCode - ISO 3166-1 alpha-2 country code
+ * @returns {string} - Language locale (e.g., 'pt-BR', 'en-US')
+ */
+function getLanguageFromCountry(countryCode: string): string {
+  // Return ISO locale format for reference only
+  // Groq will detect actual language from product name
+  return `${countryCode.toLowerCase()}-${countryCode}`;
+}
+
+// Cross-validate country using multiple signals
+function validateAndCorrectCountry(
+  userCountry: string,
+  pageUrl: string | undefined,
+  productName: string
+): string {
+  console.log('🔍 [VALIDATE] Cross-validating country...');
+  console.log('📍 [VALIDATE] Input:', { userCountry, pageUrl: pageUrl || 'N/A', productName: productName.substring(0, 50) });
+
+  const signals: { source: string; country: string; confidence: 'high' | 'medium' | 'low' }[] = [];
+
+  // SIGNAL 1: userCountry from frontend
+  signals.push({ source: 'frontend', country: userCountry, confidence: 'medium' });
+
+  // SIGNAL 2: Domain TLD
+  const domainMatch = (pageUrl || '').match(/\.(com\.br|com\.mx|es|fr|de|it|co\.uk|com\.au|ca)($|\/)/);
+  if (domainMatch) {
+    const tld = domainMatch[1];
+    const tldToCountry: Record<string, string> = {
+      'com.br': 'BR',
+      'com.mx': 'MX',
+      'es': 'ES',
+      'fr': 'FR',
+      'de': 'DE',
+      'it': 'IT',
+      'co.uk': 'GB',
+      'com.au': 'AU',
+      'ca': 'CA'
+    };
+    const domainCountry = tldToCountry[tld];
+    if (domainCountry) {
+      signals.push({ source: 'domain', country: domainCountry, confidence: 'high' });
+      console.log(`✅ [VALIDATE] Domain signal: ${tld} → ${domainCountry}`);
+    }
+  }
+
+  // SIGNAL 3: Product name language - REMOVED
+  // Let Groq handle language detection automatically
+  console.log('ℹ️ [VALIDATE] Language detection delegated to Groq');
+
+  console.log('📊 [VALIDATE] All signals:', signals);
+
+  // Count votes by country (weighted by confidence)
+  const votes: Record<string, number> = {};
+  signals.forEach(signal => {
+    const weight = signal.confidence === 'high' ? 2 : 1;
+    votes[signal.country] = (votes[signal.country] || 0) + weight;
+  });
+
+  console.log('🗳️ [VALIDATE] Votes:', votes);
+
+  // Get winner
+  const winner = Object.entries(votes)
+    .sort(([_, a], [__, b]) => b - a)[0];
+
+  const correctedCountry = winner[0];
+
+  if (correctedCountry !== userCountry) {
+    console.log(`🔄 [VALIDATE] Country corrected: ${userCountry} → ${correctedCountry}`);
+    console.log(`📊 [VALIDATE] Confidence: ${winner[1]} votes`);
+  } else {
+    console.log(`✅ [VALIDATE] Country confirmed: ${userCountry}`);
+  }
+
+  return correctedCountry;
+}
+
+/**
+ * Get preferred e-commerce sites by country
+ * @param {string} countryCode - ISO 3166-1 alpha-2 country code
+ * @returns {Array<string>} - List of local e-commerce sites
+ */
+function getLocalEcommerce(countryCode: string): string[] {
+  const ecommerceByCountry: Record<string, string[]> = {
+    'BR': [
+      'Mercado Livre (mercadolivre.com.br)',
+      'Americanas (americanas.com.br)',
+      'Magazine Luiza (magazineluiza.com.br)',
+      'Amazon Brasil (amazon.com.br)',
+      'Shopee Brasil (shopee.com.br)'
+    ],
+    'US': [
+      'Amazon (amazon.com)',
+      'Walmart (walmart.com)',
+      'Target (target.com)',
+      'eBay (ebay.com)',
+      'Best Buy (bestbuy.com)'
+    ],
+    'GB': [
+      'Amazon UK (amazon.co.uk)',
+      'Argos (argos.co.uk)',
+      'Currys (currys.co.uk)',
+      'John Lewis (johnlewis.com)'
+    ],
+    'ES': [
+      'Amazon España (amazon.es)',
+      'El Corte Inglés (elcorteingles.es)',
+      'MediaMarkt (mediamarkt.es)',
+      'Carrefour (carrefour.es)'
+    ],
+    'MX': [
+      'Mercado Libre (mercadolibre.com.mx)',
+      'Amazon México (amazon.com.mx)',
+      'Liverpool (liverpool.com.mx)',
+      'Coppel (coppel.com)'
+    ],
+    'AR': [
+      'Mercado Libre (mercadolibre.com.ar)',
+      'Falabella (falabella.com.ar)',
+      'Garbarino (garbarino.com)'
+    ],
+    'FR': [
+      'Amazon France (amazon.fr)',
+      'Cdiscount (cdiscount.com)',
+      'Fnac (fnac.com)',
+      'Darty (darty.com)'
+    ],
+    'DE': [
+      'Amazon Deutschland (amazon.de)',
+      'MediaMarkt (mediamarkt.de)',
+      'Saturn (saturn.de)',
+      'Otto (otto.de)'
+    ],
+    'IT': [
+      'Amazon Italia (amazon.it)',
+      'ePRICE (eprice.it)',
+      'Unieuro (unieuro.it)'
+    ],
+    'CA': [
+      'Amazon Canada (amazon.ca)',
+      'Best Buy Canada (bestbuy.ca)',
+      'Walmart Canada (walmart.ca)'
+    ],
+    'AU': [
+      'Amazon Australia (amazon.com.au)',
+      'JB Hi-Fi (jbhifi.com.au)',
+      'Harvey Norman (harveynorman.com.au)'
+    ],
+    'KR': [
+      'Coupang (coupang.com)',
+      'Gmarket (gmarket.co.kr)',
+      '11번가 (11st.co.kr)',
+      'Interpark (interpark.com)'
+    ],
+    'JP': [
+      'Rakuten (rakuten.co.jp)',
+      'Amazon Japan (amazon.co.jp)',
+      'Mercari (mercari.com)'
+    ],
+    'CN': [
+      'Taobao (taobao.com)',
+      'JD.com (jd.com)',
+      'Tmall (tmall.com)'
+    ],
+    'IN': [
+      'Amazon India (amazon.in)',
+      'Flipkart (flipkart.com)',
+      'Myntra (myntra.com)'
+    ],
+    'RU': [
+      'Wildberries (wildberries.ru)',
+      'Ozon (ozon.ru)',
+      'Yandex Market (market.yandex.ru)'
+    ]
+  };
+
+  return ecommerceByCountry[countryCode] || [
+    `Local ${countryCode} e-commerce sites`,
+    'Amazon',
+    'eBay',
+    'Local retailers'
+  ];
+}
+
+// ===== TIPOS =====
+interface ProductInfo {
+  productName?: string;
+  product_name?: string;
+  description?: string;
+  pageUrl?: string;
+  product_url?: string;
+  selectedText?: string;
+  pageTitle?: string;
+  price?: string;
+  images?: string[];
+  userCountry?: string;
+}
+
+interface AnalysisRequest {
+  productInfo?: ProductInfo;
+  product_name?: string;
+  productName?: string;
+  product_url?: string;
+  pageUrl?: string;
+  userCountry?: string;
+}
+
+interface SustainabilityCriterion {
+  weight: number;
+  guidelines: string[];
+}
+
+interface CategoryData {
+  name: string;
+  keywords: string[];
+  exclusion_keywords: string[];
+  keyword_synonyms: Record<string, string[]>;
+  sustainability_criteria: Record<string, SustainabilityCriterion>;
+  certifications: string[];
+  references: string[];
+  brazilian_brands?: string[];
+  product_types?: string[];
+}
+
+interface ScoringSource {
+  text: string;
+  weight: number;
+}
+
+interface CategoryScore {
+  category: string;
+  score: number;
+  matches: string[];
+  exclusions: string[];
+  confidence: 'high' | 'medium' | 'low';
+}
+
+interface ScoringConfig {
+  source_weights: {
+    product_name_translated: number;
+    product_name_original: number;
+    page_title: number;
+    description: number;
+    url: number;
+  };
+  validation_thresholds: {
+    minimum_score: number;
+    confidence_ratio: number;
+    exclusion_penalty: number;
+  };
+}
+
+interface TextProcessingConfig {
+  remove_accents: boolean;
+  lowercase: boolean;
+  remove_punctuation: boolean;
+  word_boundary_matching: boolean;
+}
+
+interface AlternativesConfig {
+  version: string;
+  description: string;
+  lastUpdated: string;
+  source: string;
+  common_translations: Record<string, string>;
+  incompatible_types: Record<string, string[]>;
+  categories: Record<string, CategoryData>;
+  scoring_config: ScoringConfig;
+  text_processing: TextProcessingConfig;
+}
+
+interface OriginalProduct {
+  name: string;
+  category: string;
+  sustainability_score: number;
+  summary: string;
+  environmental_impact: {
+    carbon_footprint: string;
+    water_usage: string;
+    recyclability: string;
+    toxicity: string;
+  };
+  strengths: string[];
+  weaknesses: string[];
+  certifications_found: string[];
+  recommendations: string[];
+}
+
+interface Alternative {
+  name: string;
+  description: string;
+  benefits: string;
+  sustainability_score: number;
+  where_to_buy: string;
+  certifications: string[];
+  product_url?: string | null;
+}
+
+interface GroqAnalysisResult {
+  originalProduct: OriginalProduct;
+  alternatives: Alternative[];
+}
+
+interface AnalysisResponse {
+  success: boolean;
+  productInfo?: {
+    productName: string;
+    pageUrl: string;
+    pageTitle?: string;
+    selectedText?: string;
+  };
+  category?: string;
+  originalProduct?: OriginalProduct;
+  alternatives?: Alternative[];
+  timestamp?: string;
+  error?: string;
+  _meta?: {
+    cached: boolean;
+    cacheSize: number;
+  };
+}
+
+// Cast seguro para o JSON
+const alternativesConfig = alternativesData as unknown as AlternativesConfig;
+
+const VALID_CATEGORIES: Record<string, true> = Object.keys(alternativesConfig.categories).reduce(
+  (map, key) => {
+    map[key] = true;
+    return map;
+  },
+  {} as Record<string, true>
+);
+
+// ======= UTILIDADES DE CATEGORIZAÇÃO DINÂMICA =======
+function getTextProcessingConfig(): TextProcessingConfig {
   return (
-    (alternativesConfig as any).text_processing || {
+    alternativesConfig.text_processing || {
       remove_accents: true,
       lowercase: true,
       remove_punctuation: true,
-      word_boundary_matching: true,
+      word_boundary_matching: true
     }
   );
-}
-
-function getWebSearchConfig() {
-  return (alternativesConfig as any)['Web Search_config'] || {};
-}
-
-function getArticlePatterns(): string[] {
-  return (
-    getWebSearchConfig().article_url_patterns || [
-      '/blog/',
-      '/article/',
-      '/news/',
-      '/guide/',
-      '/review',
-      '/reviews',
-      'youtube.',
-      'wikipedia.',
-      '/best-',
-      '/top-',
-    ]
-  );
-}
-
-function containsAny(text: string, patterns: string[]): boolean {
-  const haystack = (text || '').toLowerCase();
-  return patterns.some((pattern) => haystack.includes((pattern || '').toLowerCase()));
-}
-
-function isArticleUrl(url: string, articlePatterns: string[]): boolean {
-  const normalizedUrl = (url || '').toLowerCase();
-  return articlePatterns.some((pattern) => normalizedUrl.includes((pattern || '').toLowerCase()));
-}
-
-function isEcommerceResult(
-  url: string,
-  title: string,
-  snippet: string,
-  domains: string[],
-  urlSignals: string[],
-  textSignals: string[],
-): boolean {
-  const normalizedUrl = (url || '').toLowerCase();
-  const normalizedText = `${title || ''} ${snippet || ''}`.toLowerCase();
-
-  const matchesDomain = domains.some((domain) => normalizedUrl.includes((domain || '').toLowerCase()));
-  const matchesUrlSignal = urlSignals.some((signal) => normalizedUrl.includes((signal || '').toLowerCase()));
-  const matchesTextSignal = textSignals.some((signal) => normalizedText.includes((signal || '').toLowerCase()));
-
-  return matchesDomain || matchesUrlSignal || matchesTextSignal;
 }
 
 function normalizeCategoryText(text: string): string {
@@ -258,7 +412,10 @@ function normalizeCategoryText(text: string): string {
   return result.replace(/\s+/g, ' ').trim();
 }
 
-function expandKeywordWithSynonyms(keyword: string, synonymsMap: Record<string, string[]> = {}): string[] {
+function expandKeywordWithSynonyms(
+  keyword: string,
+  synonymsMap: Record<string, string[]>
+): string[] {
   const normalizedKeyword = (keyword || '').toLowerCase();
   const variants = new Set<string>([normalizedKeyword]);
 
@@ -290,13 +447,9 @@ function countMatches(text: string, keyword: string): number {
   return (text.match(new RegExp(safeKeyword, 'gi')) || []).length;
 }
 
-function calculateCategoryScores(sources: { text: string; weight: number }[]): Array<{
-  category: string;
-  score: number;
-  matches: string[];
-}> {
+function calculateCategoryScores(sources: ScoringSource[]): CategoryScore[] {
   const categories = alternativesConfig.categories;
-  const results: Array<{ category: string; score: number; matches: string[] }> = [];
+  const results: CategoryScore[] = [];
 
   for (const [categoryKey, categoryData] of Object.entries(categories)) {
     let totalScore = 0;
@@ -308,10 +461,7 @@ function calculateCategoryScores(sources: { text: string; weight: number }[]): A
       const normalizedText = normalizeCategoryText(source.text);
 
       for (const keyword of categoryData.keywords) {
-        const allVariants = expandKeywordWithSynonyms(
-          keyword,
-          (categoryData as CategoryConfig).keyword_synonyms,
-        );
+        const allVariants = expandKeywordWithSynonyms(keyword, categoryData.keyword_synonyms);
 
         for (const variant of allVariants) {
           const matchCount = countMatches(normalizedText, variant);
@@ -329,27 +479,32 @@ function calculateCategoryScores(sources: { text: string; weight: number }[]): A
       category: categoryKey,
       score: totalScore,
       matches,
+      exclusions: [],
+      confidence: 'medium'
     });
   }
 
   return results;
 }
 
-function applyExclusionRules(scores: Array<{ category: string; score: number; matches: string[] }>, primaryText: string) {
+function applyExclusionRules(
+  scores: CategoryScore[],
+  primaryText: string
+): CategoryScore[] {
   const normalizedPrimary = normalizeCategoryText(primaryText);
   const categories = alternativesConfig.categories;
   const penalty =
     alternativesConfig.scoring_config?.validation_thresholds?.exclusion_penalty ?? -999;
 
   return scores.map((scoreData) => {
-    const categoryData = categories[scoreData.category] as CategoryConfig;
+    const categoryData = categories[scoreData.category];
     const exclusionKeywords = categoryData.exclusion_keywords || [];
     const exclusionsFound: string[] = [];
 
     for (const exclusionKw of exclusionKeywords) {
       const allVariants = expandKeywordWithSynonyms(
         exclusionKw,
-        categoryData.keyword_synonyms,
+        categoryData.keyword_synonyms
       );
 
       for (const variant of allVariants) {
@@ -363,192 +518,265 @@ function applyExclusionRules(scores: Array<{ category: string; score: number; ma
       return {
         ...scoreData,
         score: scoreData.score + penalty,
-        exclusions: exclusionsFound,
+        exclusions: exclusionsFound
       };
     }
 
-    return { ...scoreData, exclusions: [] as string[] };
+    return scoreData;
   });
 }
 
-function selectWinner(scores: Array<{ category: string; score: number; exclusions: string[] }>) {
-  const thresholds = alternativesConfig.scoring_config?.validation_thresholds || {
-    minimum_score: 1,
-    confidence_ratio: 1.5,
-  };
+function selectWinner(scores: CategoryScore[]): CategoryScore | null {
+  const thresholds = alternativesConfig.scoring_config.validation_thresholds;
   const sorted = [...scores].sort((a, b) => b.score - a.score);
   const first = sorted[0];
   const second = sorted[1];
 
   if (!first || first.score < thresholds.minimum_score) {
+    console.log(
+      `❌ [CATEGORY] Winner score too low: ${first?.score ?? 0} < ${thresholds.minimum_score}`
+    );
     return null;
   }
 
   const ratio = second && second.score > 0 ? first.score / second.score : Infinity;
 
+  if (ratio < thresholds.confidence_ratio) {
+    first.confidence = 'low';
+    console.log(
+      `⚠️ [CATEGORY] Low confidence: ratio ${ratio.toFixed(2)} < ${thresholds.confidence_ratio}`
+    );
+  } else if (ratio >= thresholds.confidence_ratio * 1.5) {
+    first.confidence = 'high';
+  } else {
+    first.confidence = 'medium';
+  }
+
   if (first.exclusions.length > 0) {
+    console.log(`❌ [CATEGORY] Exclusions found for ${first.category}:`, first.exclusions);
     return null;
   }
 
-  return { ...first, confidence: ratio >= thresholds.confidence_ratio ? 'medium' : 'low' };
+  return first;
 }
 
-function keywordFallbackCategory(
-  productName: string,
-  context: string,
-  categories: Record<string, CategoryConfig>,
-): string {
-  const searchText = `${productName} ${context}`.toLowerCase();
+async function classifyWithAI(
+  name: string,
+  translated: string,
+  title: string
+): Promise<string> {
+  const groqApiKey = process.env.GROQ_API_KEY;
+  if (!groqApiKey) {
+    throw new Error('Cannot classify: low confidence and no AI available');
+  }
 
-  let bestMatch: { category: string; score: number } = { category: '', score: 0 };
+  const categories = alternativesConfig.categories;
+  const categoryList = Object.entries(categories)
+    .map(
+      ([key, data]) =>
+        `- ${key}: ${data.name} (keywords: ${data.keywords.slice(0, 5).join(', ')})`
+    )
+    .join('\n');
 
-  for (const [categoryKey, categoryData] of Object.entries(categories)) {
-    const keywords = categoryData.keywords || [];
-    const productTypes = categoryData.product_types || [];
-    const allKeywords = [...keywords, ...productTypes];
+  const prompt = `Classify this product into ONE category:
 
-    let matchScore = 0;
+PRODUCT: ${name}
+TRANSLATED: ${translated}
+PAGE TITLE: ${title}
 
-    for (const keyword of allKeywords) {
-      if (searchText.includes((keyword || '').toLowerCase())) {
-        matchScore += 1;
+AVAILABLE CATEGORIES:
+${categoryList}
+
+Return ONLY the category key (e.g., "fashion_apparel").
+Category:`;
+
+  try {
+    const groq = new Groq({ apiKey: groqApiKey });
+    const completion = await groq.chat.completions.create({
+      messages: [
+        { role: 'system', content: 'Return only the category key, nothing else.' },
+        { role: 'user', content: prompt }
+      ],
+      model: config.groq.defaultModel,
+      temperature: config.groq.operations.typeDetection.temperature,
+      max_tokens: config.groq.operations.typeDetection.maxTokens
+    });
+
+    const rawCategory = completion.choices[0]?.message?.content?.trim();
+    let aiCategory = rawCategory ? rawCategory.toLowerCase() : '';
+
+    // NORMALIZE COMMON TYPOS
+    const typoMap: Record<string, string> = {
+      reuseable_zero_waste: 'reusable_zero_waste',
+      reuseable: 'reusable',
+      sustinable: 'sustainable',
+      sustianable: 'sustainable',
+      reneweable: 'renewable',
+      recylable: 'recyclable',
+      recycleable: 'recyclable',
+      biodegradeable: 'biodegradable',
+      composteable: 'compostable',
+      enviroment: 'environment',
+      enviorment: 'environment'
+    };
+
+    // Apply typo corrections
+    for (const [typo, correct] of Object.entries(typoMap)) {
+      if (aiCategory.includes(typo)) {
+        console.log(`🔧 [CATEGORY] Fixing typo: "${typo}" → "${correct}"`);
+        aiCategory = aiCategory.replace(typo, correct);
       }
     }
 
-    const exclusionKeywords = categoryData.exclusion_keywords || [];
-    for (const exclusion of exclusionKeywords) {
-      if (searchText.includes((exclusion || '').toLowerCase())) {
-        matchScore = 0;
-        break;
-      }
+    console.log(`🏷️ [CATEGORY] Normalized category: "${aiCategory}"`);
+
+    if (aiCategory && categories[aiCategory]) {
+      console.log(`🤖 [CATEGORY] AI classified as: ${aiCategory}`);
+      return aiCategory;
     }
 
-    if (matchScore > bestMatch.score) {
-      bestMatch = { category: categoryKey, score: matchScore };
-    }
+    console.error(`❌ [CATEGORY] Invalid category after normalization: "${aiCategory}"`);
+    console.error(`📋 [CATEGORY] Available categories:`, Object.keys(categories));
+    throw new Error(`AI returned invalid category: ${aiCategory}`);
+  } catch (error) {
+    console.error('❌ [CATEGORY] AI classification failed:', error);
+    throw new Error('Could not identify product category');
   }
-
-  if (bestMatch.score > 0) {
-    return bestMatch.category;
-  }
-
-  const firstCategory = Object.keys(categories)[0] || 'electronics';
-  console.warn(`[SICOSI] No keyword match for "${productName}", using fallback: ${firstCategory}`);
-  return firstCategory;
 }
 
-function categorizeProduct(name: string, context: string): string | null {
-  const webSearchConfig = getWebSearchConfig();
-  const genericNames =
-    webSearchConfig.generic_product_names || ['product', 'item', 'thing', 'test', 'xyz', 'abc'];
+function logCategorizationResult(
+  allScores: CategoryScore[],
+  winner: CategoryScore | null
+): void {
+  console.log('🔍 [CATEGORY] Detailed Analysis:');
+  console.log('━'.repeat(60));
 
-  const nameLower = (name || '').toLowerCase().trim();
-  const text = `${name} ${context}`.toLowerCase();
+  const top3 = [...allScores]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
 
-  if (genericNames.includes(nameLower)) {
-    console.warn('⚠️ [HEURISTIC] Generic product name detected, skipping heuristic categorization');
-    return null;
+  for (const score of top3) {
+    console.log(`\n📊 ${score.category}: ${score.score} points`);
+    if (score.matches.length > 0) {
+      console.log(`   ✓ Matches: ${score.matches.join(', ')}`);
+    }
+    if (score.exclusions.length > 0) {
+      console.log(`   ✗ Exclusions: ${score.exclusions.join(', ')}`);
+    }
   }
 
-  console.log('🔍 [HEURISTIC] Text to analyze:', text.substring(0, 150));
-
-  const scores = calculateCategoryScores([
-    { text: name || '', weight: 3 },
-    { text: context || '', weight: 1 },
-  ]);
-
-  const scoresWithExclusions = applyExclusionRules(scores, name || '');
-  const winner = selectWinner(scoresWithExclusions);
+  console.log('\n' + '━'.repeat(60));
 
   if (winner) {
-    console.log('🔍 [HEURISTIC] Match found:', winner.category);
-    return winner.category;
+    console.log(`✅ [CATEGORY] Winner: ${winner.category}`);
+    console.log(`   Confidence: ${winner.confidence}`);
+    console.log(`   Score: ${winner.score}`);
+  } else {
+    console.log('❌ [CATEGORY] No valid winner found');
   }
 
-  console.log('🔍 [HEURISTIC] No match found');
-  return null;
+  console.log('━'.repeat(60));
 }
 
-export async function identifyCategory(
-  productInfo: ProductInfo,
-  categoryFromFrontend?: string | null,
+// ===== DETECTAR TIPO DE PRODUTO COM IA (CORRIGIDO) =====
+async function detectProductType(
+  productName: string, 
+  pageTitle: string = '',
+  categoryName: string = ''
 ): Promise<string> {
-  const name = productInfo.productName || productInfo.product_name || '';
-  const description = productInfo.description || '';
-  const pageTitle = productInfo.pageTitle || '';
-  const availableCategories = alternativesConfig.categories || {};
 
-  console.log('🔍 [CATEGORY] Starting identification...');
-  console.log('  - Product:', name.substring(0, 50));
-  console.log('  - Frontend category:', categoryFromFrontend || 'none');
+  // ✅ CORREÇÃO 3: FALLBACK INTELIGENTE com dicionário dinâmico do JSON
+  const categories = alternativesConfig.categories;
 
-  if (categoryFromFrontend) {
-    const validCategories = Object.keys(availableCategories);
-
-    if (validCategories.includes(categoryFromFrontend)) {
-      console.log('✅ [BACKEND] Frontend category is valid:', categoryFromFrontend);
-      console.log('🔍 [BACKEND] Will verify with own analysis...');
-
-      const contextForHeuristic = `${pageTitle} ${description}`;
-
-      try {
-        const heuristicCategory = categorizeProduct(name, contextForHeuristic);
-
-        if (heuristicCategory && heuristicCategory !== categoryFromFrontend) {
-          console.warn('⚠️ [BACKEND] Category mismatch!');
-          console.warn(`  Frontend: ${categoryFromFrontend}`);
-          console.warn(`  Backend:  ${heuristicCategory}`);
-          console.log('✅ [BACKEND] Using backend analysis (more reliable)');
-          return heuristicCategory;
-        } else if (heuristicCategory === categoryFromFrontend) {
-          console.log('✅ [BACKEND] Frontend and backend agree:', categoryFromFrontend);
-          return categoryFromFrontend;
+  // Buscar tipo conhecido no nome do produto
+  const safeProductName = productName || '';
+  const lowerName = safeProductName.toLowerCase();
+  const lowerTitle = (pageTitle || '').toLowerCase();
+  
+  for (const [, data] of Object.entries(categories)) {
+    if (data.product_types) {
+      for (const type of data.product_types) {
+        // Usar regex com word boundaries
+        const pattern = new RegExp(`\\b${type}s?\\b`, 'i');
+        if (pattern.test(lowerName) || pattern.test(lowerTitle)) {
+          console.log(`🏷️ Type detected (keyword from json): "${type}"`);
+          return type;
         }
-      } catch (error) {
-        console.log('ℹ️ [BACKEND] Heuristic inconclusive, trusting frontend');
-        return categoryFromFrontend;
       }
-
-      return categoryFromFrontend;
-    }
-
-    console.warn('⚠️ [BACKEND] Invalid category from frontend:', categoryFromFrontend);
-    console.log('🔍 [BACKEND] Will auto-detect...');
-  }
-
-  console.log('🔍 [BACKEND] Auto-detecting category...');
-  console.log('🔍 [CATEGORY] Trying heuristic identification...');
-  const heuristicCategory = categorizeProduct(name, `${pageTitle} ${description}`);
-
-  console.log('🔍 [HEURISTIC] Analyzing:', {
-    name: name.substring(0, 50),
-    context: `${pageTitle} ${description}`.substring(0, 100),
-    result: heuristicCategory,
-  });
-
-  if (heuristicCategory) {
-    if (!availableCategories[heuristicCategory]) {
-      console.error('❌ [CATEGORY] Heuristic returned invalid:', heuristicCategory);
-    } else {
-      console.log('✅ [CATEGORY] Heuristic match:', heuristicCategory);
-      return heuristicCategory;
     }
   }
+  
+  const groqApiKey = process.env.GROQ_API_KEY;
+  
+  // Se não achou com keywords e não tem API key, usar fallback básico
+  if (!groqApiKey) {
+    const words = safeProductName.split(/\s+/).filter(w => w.length > 2);
+    const fallback = words.slice(-2).join(' ');
+    console.log(`🏷️ Type (basic fallback): "${fallback}"`);
+    return fallback;
+  }
 
-  console.log('🤖 [CATEGORY] Heuristic inconclusive, using AI...');
-  const aiCategory = keywordFallbackCategory(name, `${pageTitle} ${description}`, availableCategories);
-  console.log('✅ [CATEGORY] AI selected:', aiCategory);
+  try {
+    const groq = new Groq({ apiKey: groqApiKey });
+    
+    const prompt = `Extract the SPECIFIC and DETAILED product type from: "${productName}".
 
-  return aiCategory;
+CRITICAL INSTRUCTIONS:
+- Be EXTREMELY SPECIFIC, not generic
+- Include the product's primary function/purpose
+- For software, specify what kind of software (photo editing, video editing, office, etc.)
+- For electronics, specify the device type (smartphone, laptop, tablet, etc.)
+- For clothing, specify the item type (sneakers, jacket, t-shirt, etc.)
+
+EXAMPLES:
+- "Adobe Photoshop 2024" → "photo editing software"
+- "Microsoft Office 365" → "office productivity software"
+- "iPhone 15 Pro" → "smartphone"
+- "Nike Air Max" → "athletic sneakers"
+- "IKEA POÄNG Chair" → "armchair furniture"
+- "Pantene Shampoo" → "hair care shampoo"
+- "Tesla Model 3" → "electric sedan vehicle"
+
+Return ONLY the specific product type in English, nothing else.`;
+
+    const completion = await groq.chat.completions.create({
+      messages: [
+        { role: 'system', content: 'Extract product type. Return 1-2 words only.' },
+        { role: 'user', content: prompt }
+      ],
+      model: config.groq.defaultModel,
+      temperature: config.groq.operations.typeDetection.temperature,
+      max_tokens: config.groq.operations.typeDetection.maxTokens
+    });
+
+    const rawType = completion.choices[0]?.message?.content?.trim();
+    const type = rawType ? rawType.toLowerCase() : '';
+    
+    if (type && type.length > 0 && type.length < 50) {
+      console.log(`🏷️ Type (AI): "${type}"`);
+      return type;
+    }
+
+    throw new Error('Invalid type from AI');
+
+  } catch (error) {
+    console.error('⚠️ Type detection error:', error);
+    // Fallback: últimas palavras do nome
+    const words = safeProductName.split(/\s+/).filter(w => w.length > 2);
+    const fallback = words.slice(-2).join(' ');
+    console.log(`🏷️ Type (error fallback): "${fallback}"`);
+    return fallback;
+  }
 }
 
+// ===== HANDLER PRINCIPAL =====
 export default async function handler(
   req: NextApiRequest,
-  res: NextApiResponse,
+  res: NextApiResponse<AnalysisResponse>
 ) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -558,419 +786,869 @@ export default async function handler(
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  const groqApiKey = process.env.GROQ_API_KEY;
-  if (!groqApiKey) {
-    return res.status(500).json({ success: false, error: 'GROQ_API_KEY not configured' });
+  try {
+    const body = req.body as AnalysisRequest;
+    const rawUserCountry = body.userCountry || body.productInfo?.userCountry || 'US';
+    console.log('🌍 [COUNTRY] Raw user country:', rawUserCountry);
+
+    const productInfo: ProductInfo = body.productInfo || {
+      productName: body.product_name || body.productName,
+      pageUrl: body.product_url || body.pageUrl,
+      userCountry: rawUserCountry
+    };
+
+    productInfo.userCountry = productInfo.userCountry || rawUserCountry;
+
+    // Cross-validate country (não usa Groq, pode ficar aqui)
+    const userCountry = validateAndCorrectCountry(
+      productInfo.userCountry,
+      productInfo.pageUrl,
+      productInfo.productName || productInfo.product_name || ''
+    );
+
+    productInfo.userCountry = userCountry;
+    console.log('🌍 [COUNTRY] Validated country:', userCountry);
+
+    const productName = productInfo.productName || productInfo.product_name;
+    if (!productName) {
+      return res.status(400).json({ success: false, error: 'productName is required' });
+    }
+
+    console.log('📥 [ANALYZE] Request received:', {
+      productName: productName,
+      pageUrl: productInfo.pageUrl,
+      userCountry: userCountry,
+      timestamp: new Date().toISOString()
+    });
+
+    // ════════════════════════════════════════════════════════════
+    // ✅ STEP 1: CHECK CACHE FIRST (ANTES DE QUALQUER GROQ!)
+    // ════════════════════════════════════════════════════════════
+    console.log('🔍 [CACHE] Checking cache BEFORE any Groq calls...');
+
+    const cachedAnalysis = await getCachedAnalysis(productName, userCountry);
+
+    if (cachedAnalysis) {
+      console.log('🚀 [CACHE] HIT! Returning cached result (0 tokens, 0 API calls)');
+
+      // Retorna imediatamente sem chamar Groq
+      return res.status(200).json({
+        success: true,
+        productInfo: {
+          productName: productName,
+          pageUrl: productInfo.pageUrl || '',
+          pageTitle: productInfo.pageTitle || '',
+          selectedText: productInfo.selectedText || ''
+        },
+        category: cachedAnalysis.originalProduct.category,
+        originalProduct: cachedAnalysis.originalProduct,
+        alternatives: cachedAnalysis.alternatives,
+        timestamp: new Date().toISOString(),
+        _meta: {
+          cached: true,
+          tokensUsed: 0,
+          tokensSaved: '~2800'
+        }
+      });
+    }
+
+    console.log('📭 [CACHE] MISS - Proceeding with full analysis...');
+
+    // ════════════════════════════════════════════════════════════
+    // STEP 2: IDENTIFICAR CATEGORIA (com validação do frontend)
+    // ════════════════════════════════════════════════════════════
+    const categoryFromFrontend = body.category;
+    let category: string;
+
+    if (categoryFromFrontend) {
+      console.log('📥 [BACKEND] Category from frontend:', categoryFromFrontend);
+
+      const availableCategories = Object.keys(alternativesConfig.categories);
+
+      if (availableCategories.includes(categoryFromFrontend)) {
+        console.log('✅ [BACKEND] Frontend category is valid:', categoryFromFrontend);
+        console.log('🔍 [BACKEND] Validating if category matches product...');
+
+        const productLower = productName.toLowerCase();
+        const categoryData = alternativesConfig.categories[categoryFromFrontend];
+
+        // Verificar se alguma keyword da categoria aparece no nome do produto
+        const hasKeywordMatch = categoryData.keywords.some((keyword: string) => 
+          productLower.includes(keyword.toLowerCase())
+        );
+
+        // Verificar se alguma exclusion_keyword aparece (indica categoria errada)
+        const exclusionKeywords = (categoryData as any).exclusion_keywords || [];
+        const hasExclusionMatch = exclusionKeywords.some((keyword: string) =>
+          productLower.includes(keyword.toLowerCase())
+        );
+
+        if (hasKeywordMatch && !hasExclusionMatch) {
+          console.log('✅ [BACKEND] Category validated, using frontend category:', categoryFromFrontend);
+          category = categoryFromFrontend;
+        } else {
+          console.warn('⚠️ [BACKEND] Category does NOT match product, ignoring frontend category');
+          console.warn('⚠️ [BACKEND] Product:', productName.substring(0, 50));
+          console.warn('⚠️ [BACKEND] Frontend sent:', categoryFromFrontend);
+          console.warn('⚠️ [BACKEND] Will use heuristic instead');
+
+          // Usar heurística
+          category = await identifyCategory(productInfo);
+          console.log('✅ [BACKEND] Heuristic category:', category);
+        }
+      } else {
+        console.warn('⚠️ [BACKEND] Frontend sent invalid category:', categoryFromFrontend);
+        category = await identifyCategory(productInfo);
+        console.log('✅ [BACKEND] Heuristic category:', category);
+      }
+    } else {
+      // Categoria não enviada pelo frontend
+      category = await identifyCategory(productInfo);
+    }
+
+    console.log('📂 [CATEGORY] Final category:', category);
+
+    const categories = alternativesConfig.categories;
+    const categoryData = categories[category];
+
+    if (!categoryData) {
+      return res.status(400).json({ success: false, error: `Category not found: ${category}` });
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // STEP 3: TRADUZIR E DETECTAR TIPO (só executa se cache miss)
+    // ════════════════════════════════════════════════════════════
+    console.log('🔍 [SEARCH] Searching sustainable alternatives...');
+
+    const translatedName = await translateProductName(productName);
+    const productType = await detectProductType(
+      translatedName,
+      productInfo.pageTitle || '',
+      categoryData.name
+    );
+
+    console.log('🏷️ [TYPE] Detected:', {
+      productType: productType,
+      translatedName: translatedName
+    });
+
+    // ════════════════════════════════════════════════════════════
+    // STEP 4: BUSCAR PRODUTOS REAIS (não usa Groq)
+    // ════════════════════════════════════════════════════════════
+    const realProducts = await searchRealProducts(
+      productName,
+      productType,
+      categoryData,
+      category,
+      userCountry
+    );
+
+    console.log(`✅ [SEARCH] Found ${realProducts.length} products`);
+
+    // ════════════════════════════════════════════════════════════
+    // STEP 5: ANALISAR COM GROQ (só executa se cache miss)
+    // ════════════════════════════════════════════════════════════
+    console.log('📡 [GROQ] Analyzing product...');
+
+    const analysis = await analyzeWithGroq(
+      productInfo,
+      category,
+      categoryData,
+      productType,
+      realProducts,
+      userCountry
+    );
+
+    if (!analysis) {
+      throw new Error('Failed to generate analysis');
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // STEP 6: SALVAR NO CACHE
+    // ════════════════════════════════════════════════════════════
+    await setCachedAnalysis(productName, userCountry, analysis);
+    console.log('💾 [CACHE] Analysis saved to cache');
+
+    // ════════════════════════════════════════════════════════════
+    // STEP 7: RETORNAR RESULTADO
+    // ════════════════════════════════════════════════════════════
+    const response: AnalysisResponse = {
+      success: true,
+      productInfo: {
+        productName: productName,
+        pageUrl: productInfo.pageUrl || '',
+        pageTitle: productInfo.pageTitle || '',
+        selectedText: productInfo.selectedText || ''
+      },
+      category: category,
+      originalProduct: analysis.originalProduct,
+      alternatives: analysis.alternatives,
+      timestamp: new Date().toISOString(),
+      _meta: {
+        cached: false,
+        tokensUsed: '~2800'
+      }
+    };
+
+    console.log('📤 [ANALYZE] Response sent:', {
+      success: true,
+      category: category,
+      alternativesCount: analysis.alternatives.length,
+      timestamp: response.timestamp
+    });
+
+    return res.status(200).json(response);
+
+  } catch (error) {
+    console.error('❌ [ERROR]:', error);
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
   }
+}
 
-  const groqClient = new Groq({ apiKey: groqApiKey });
+// ===== BUSCAR PRODUTOS REAIS (CORRIGIDO) =====
+async function searchRealProducts(
+  productName: string,
+  productType: string,
+  categoryData: CategoryData,
+  category: string,
+  userCountry: string
+): Promise<Array<{title: string, url: string, snippet: string}>> {
 
-  const body = (req.body || {}) as AnalysisRequest;
-  const rawProductInfo = (body.productInfo || {}) as ProductInfo;
-  const productName = body.productName || body.product_name || rawProductInfo.productName || rawProductInfo.product_name;
-  const productInfo: ProductInfo = {
-    ...rawProductInfo,
-    productName: rawProductInfo.productName || rawProductInfo.product_name || productName,
-    product_name: rawProductInfo.product_name || rawProductInfo.productName || productName,
+  const countryNames: Record<string, string> = {
+    'BR': 'Brazil', 'US': 'United States', 'UK': 'United Kingdom',
+    'CA': 'Canada', 'AU': 'Australia', 'DE': 'Germany',
+    'FR': 'France', 'ES': 'Spain', 'IT': 'Italy'
   };
-  const pageTitle = productInfo.pageTitle || body.pageTitle || '';
-  const description = productInfo.description || body.description || '';
-  const userCountry = (body.userCountry || productInfo.userCountry || 'US').toUpperCase();
-  const userLanguage = body.userLanguage || productInfo.userLanguage || 'pt-BR';
-  const categoryFromFrontend = body.category || null;
 
-  if (categoryFromFrontend) {
-    console.log('📥 [BACKEND] Category from frontend:', categoryFromFrontend);
+  // Construir query otimizada via Groq
+  const groqApiKey = process.env.GROQ_API_KEY;
+  const groqPrompt = `Generate a short e-commerce search query (max 6 words) to find sustainable/eco-friendly ${productType} in ${userCountry}. Return ONLY the query in the local language, nothing else.`;
+
+  let query = `sustainable ${productType} eco-friendly ${countryNames[userCountry] || userCountry}`;
+
+  if (groqApiKey) {
+    try {
+      const groq = new Groq({ apiKey: groqApiKey });
+      const completion = await groq.chat.completions.create({
+        messages: [
+          { role: 'system', content: 'You generate concise e-commerce search queries.' },
+          { role: 'user', content: groqPrompt }
+        ],
+        model: config.groq.defaultModel,
+        temperature: 0.2,
+        max_tokens: 30
+      });
+
+      const aiQuery = completion.choices?.[0]?.message?.content?.trim();
+      if (aiQuery) {
+        query = aiQuery;
+      }
+    } catch (error) {
+      console.log('⚠️ [SEARCH] Groq query generation failed, using fallback query', error);
+    }
   } else {
-    console.log('📥 [BACKEND] No category from frontend, will auto-detect');
+    console.log('⚠️ [SEARCH] No GROQ_API_KEY, using fallback query');
   }
 
-  console.log('📥 [REQUEST] Full body:', JSON.stringify(body, null, 2));
-
-  if (!productName || typeof productName !== 'string') {
-    return res.status(400).json({ success: false, error: 'Product name is required' });
-  }
-
-  const availableCategories = Object.keys(alternativesConfig.categories || {});
-  const webSearchConfig = getWebSearchConfig();
-  const articlePatterns = getArticlePatterns();
-  const ecommerceDomains = webSearchConfig.ecommerce_domains || [];
-  const ecommerceUrlSignals = webSearchConfig.ecommerce_url_signals || [];
-  const ecommerceTextSignals = webSearchConfig.ecommerce_text_signals || [];
-  const sustainKeywords = webSearchConfig.sustainability_keywords || [];
-  let category: string | undefined;
+  console.log(`🔍 Web Search Query: ${query}`);
 
   try {
-    const cacheKeyCategory =
-      categoryFromFrontend && availableCategories.includes(categoryFromFrontend)
-        ? categoryFromFrontend
-        : 'auto';
-    const cached = await getCachedAnalysis(
-      productName,
-      userCountry,
-      cacheKeyCategory,
-      userLanguage,
-      groqClient,
-    );
-    if (cached) {
-      return res.status(200).json({ ...cached, _meta: { cached: true } });
-    }
-
-    // ════════════════════════════════════════════════════════════
-    // STEP 2: DETERMINAR CATEGORIA (priorizar frontend)
-    // ════════════════════════════════════════════════════════════
-    category = await identifyCategory(productInfo, categoryFromFrontend);
-
-    if (!category || !alternativesConfig.categories?.[category]) {
-      console.warn(`⚠️ [CATEGORY] "${category}" not found, using fallback`);
-      category = availableCategories[0] || 'electronics';
-    }
-
-    console.log(`📂 [CATEGORY] Final category: ${category}`);
-
-    // ════════════════════════════════════════════════════════════
-    // STEP 3: BUSCAR CONTEXTO WEB (Tavily)
-    // ════════════════════════════════════════════════════════════
-    console.log('🔍 [SEARCH] Searching web context for product...');
-
-    const searchQuery = `${productName} sustainability review certifications materials`;
-    const searchResults = await webSearchClient.search(searchQuery, {
-      maxResults: 5,
-      includeAnswer: false,
-      searchDepth: 'basic',
+    let results = await webSearchClient.search(query, {
+      maxResults: 50,
+      searchDepth: 'advanced',
+      includeAnswer: false
     });
 
-    const filteredSearchResults = (searchResults.results || []).filter((r: any) => {
-      const url = r.url || '';
-      const title = r.title || '';
-      const snippet = (r.content || r.snippet || '') as string;
-      const article = isArticleUrl(url, articlePatterns);
-      const ecommerce = isEcommerceResult(
-        url,
-        title,
-        snippet,
-        ecommerceDomains,
-        ecommerceUrlSignals,
-        ecommerceTextSignals,
-      );
-      const hasSustainabilitySignal = containsAny(`${title} ${snippet}`, sustainKeywords);
+    // ✅ FALLBACK: Se poucos resultados, simplificar query
+    if (!results.success || !results.results || results.results.length < 5) {
+      console.log('⚠️ [SEARCH] Few results, trying broader query...');
+      query = `eco-friendly sustainable ${productType} shop`;
+      console.log('🔎 [SEARCH] Query (broad):', query);
 
-      if (article) return false;
-      if (ecommerce && !hasSustainabilitySignal) return false;
-
-      return true;
-    });
-
-    const contextualResults = filteredSearchResults.length
-      ? filteredSearchResults
-      : searchResults.results || [];
-
-    const searchContext = contextualResults
-      .map((r: any) => `${r.title}\n${r.content || r.snippet || ''}`)
-      .join('\n\n');
-
-    const searchCount = searchResults.results?.length ?? 0;
-    console.log(`📄 [SEARCH] Found ${searchCount} results`);
-
-    if (!category || !alternativesConfig.categories?.[category]) {
-      console.warn(`⚠️ [CATEGORY] "${category}" not found, using first available`);
-      category = availableCategories[0] || 'electronics';
+      results = await webSearchClient.search(query, {
+        maxResults: 50,
+        searchDepth: 'advanced',
+        includeAnswer: false
+      });
     }
 
-    console.log(`✅ [CATEGORY] Final category: ${category}`);
+    if (!results.success || !results.results) {
+      return [];
+    }
 
-    // ════════════════════════════════════════════════════════════
-    // STEP 4: EXTRAIR FATOS COM LLM (Groq)
-    // ════════════════════════════════════════════════════════════
-    console.log('🤖 [EXTRACT] Extracting product facts with LLM...');
+    const rawResults = (results.results || []).filter(Boolean);
 
-    const facts: ProductFacts = await extractProductFacts(productName, category, searchContext);
+    const ecommerceDomains = [
+      'mercadolivre.com', 'amazon.com', 'amazon.com.br', 'magazineluiza.com',
+      'americanas.com', 'shopee.com', 'shopee.com.br', 'walmart.com',
+      'target.com', 'ebay.com', 'bestbuy.com', 'coppel.com', 'liverpool.com.mx',
+      'aliexpress.com', 'kabum.com', 'submarino.com', 'carrefour', 'allegro',
+      'rakuten', 'falabella', 'leroymerlin', 'decathlon'
+    ];
 
-    console.log('✅ [EXTRACT] Facts extracted:', Object.keys(facts));
+    const ecommerceUrlSignals = [
+      '/dp/', '/product/', '/products/', '/produto/', '/p/', '/item/', '/listing/',
+      '/buy/', '/shop/', '/loja/', '/store/', '/collections/', '/categoria/', '/category/',
+      '/tenis', '/sapato', '/calcado', '/calçado'
+    ];
 
-    // ════════════════════════════════════════════════════════════
-    // STEP 5: CALCULAR SCORE DETERMINISTICAMENTE (TypeScript)
-    // ════════════════════════════════════════════════════════════
-    console.log('🧮 [SCORE] Calculating sustainability score...');
+    const ecommerceTextSignals = [
+      'comprar', 'buy', 'shop', 'loja', 'store', 'carrinho', 'cart', 'frete', 'entrega', 'parcelamento'
+    ];
 
-    const scoreResult = calculateSustainabilityScore(
-      facts,
-      category,
-      alternativesConfig.categories,
-    );
+    const sustainKeywords = [
+      'sustain', 'eco', 'organic', 'recycle', 'natural', 'fair trade',
+      'ethical', 'green', 'bamboo', 'recycled'
+    ];
 
-    console.log(`📊 [SCORE] Final score: ${scoreResult.finalScore}/100 (${scoreResult.classification})`);
-    console.log('📊 [SCORE] Breakdown:', scoreResult.breakdown);
+    const validProducts = rawResults.filter(r => {
+      const url = (r.url || '').toLowerCase();
+      const text = `${r.title || ''} ${r.snippet || ''}`.toLowerCase();
 
-    // ════════════════════════════════════════════════════════════
-    // STEP 6: GERAR TEXTOS DESCRITIVOS COM LLM (Groq)
-    // ════════════════════════════════════════════════════════════
-    console.log('📝 [TEXT] Generating descriptive texts...');
+      if (!url) {
+        console.log(`🔍 [FILTER] Rejected: (missing url) - Reason: missing URL`);
+        return false;
+      }
 
-    const texts = await generateDescriptiveTexts(
-      productName,
-      category,
-      scoreResult.finalScore,
-      scoreResult.breakdown,
-      facts,
-      userLanguage,
-      userCountry,
-    );
-
-    console.log('✅ [TEXT] Texts generated');
-
-    // ════════════════════════════════════════════════════════════
-    // STEP 7: BUSCAR ALTERNATIVAS (se score < 70)
-    // ════════════════════════════════════════════════════════════
-    let alternatives: any[] = [];
-
-    if (scoreResult.finalScore < 70) {
-      console.log('🔍 [ALTERNATIVES] Score below threshold, searching alternatives...');
-
+      let host = '';
       try {
-        const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY });
+        host = new URL(url).host.toLowerCase();
+      } catch (_) {
+        console.log(`🔍 [FILTER] Rejected: ${url} - Reason: invalid URL`);
+        return false;
+      }
 
-        const productName = productInfo.productName || productInfo.selectedText || 'produto';
-        const categoryName = category || 'produto sustentável';
-        const pageUrl = productInfo.pageUrl || '';
-        const language = userLanguage || 'pt';
+      const isArticle = [
+        '/blog/', '/article/', '/news/', '/guide/', '/review', '/reviews',
+        'youtube.', 'wikipedia.', '/best-', '/top-'
+      ].some(p => url.includes(p));
+      if (isArticle) {
+        console.log(`🔍 [FILTER] Rejected: ${url} - Reason: article/guide`);
+        return false;
+      }
 
-        // Detectar país pela URL
-        let countryCode = 'br';
-        let countryName = 'Brasil';
-
-        if (pageUrl.includes('.com.br')) {
-          countryCode = 'br';
-          countryName = 'Brasil';
-        } else if (pageUrl.includes('.com') && !pageUrl.includes('.com.')) {
-          countryCode = 'us';
-          countryName = 'United States';
-        } else if (pageUrl.includes('.de')) {
-          countryCode = 'de';
-          countryName = 'Germany';
-        } else if (pageUrl.includes('.kr') || pageUrl.includes('.co.kr')) {
-          countryCode = 'kr';
-          countryName = 'South Korea';
-        } else if (pageUrl.includes('.jp')) {
-          countryCode = 'jp';
-          countryName = 'Japan';
-        } else if (pageUrl.includes('.uk') || pageUrl.includes('.co.uk')) {
-          countryCode = 'uk';
-          countryName = 'United Kingdom';
-        }
-
-        console.log('🌍 [COUNTRY] Detected:', countryName, `(${countryCode})`);
-
-        // Busca específica para o país
-        const altSearchQuery = `sustainable ${categoryName} alternatives eco-friendly buy ${countryName}`;
-
-        console.log('🔍 [TAVILY] Query:', altSearchQuery);
-
-        const altSearchResults = await tavilyClient.search(altSearchQuery, {
-          maxResults: 15,
-          includeAnswer: false,
-          searchDepth: 'basic',
+      const matchesEcommerce = ecommerceDomains.some(domain => host.includes(domain));
+      const hasUrlSignal = ecommerceUrlSignals.some(p => url.includes(p)) ||
+        url.includes('?srsltid=') || /\/[\w-]+-\d+/.test(url);
+      const hasPrice = /(r\$|\$|€|£)/.test(text);
+      const hasPurchaseKeywords = ecommerceTextSignals.some(keyword => text.includes(keyword));
+      const hasSizeInfo = /\b(p|m|g|gg|\d{2})\b/.test(text);
+      const isSustainable = sustainKeywords.some(kw => text.includes(kw)) ||
+        categoryData.certifications.some(cert => {
+          const certText = (cert || '').toLowerCase();
+          return certText && text.includes(certText);
         });
 
-        console.log('✅ [TAVILY] Found:', altSearchResults.results?.length || 0, 'results');
+      const isEcommerceLike = matchesEcommerce || hasUrlSignal || hasPrice || hasPurchaseKeywords || hasSizeInfo;
 
-        if (altSearchResults.results?.length) {
-          const prompt = `You are a sustainable purchasing assistant. Suggest up to 4 alternatives using ONLY the real search results below.
-
-CONTEXT:
-- User country: ${countryName}
-- User language: ${language}
-- Category: ${categoryName}
-
-REAL PRODUCTS FOUND:
-${altSearchResults.results
-  .map(
-    (r: any, i: number) => 
-      `${i + 1}. ${r.title}\nURL: ${r.url}\nSnippet: ${(r.content || r.snippet || '').substring(0, 200)}`
-  )
-  .join('\n\n')}
-
-CRITICAL RULES:
-- Suggest ONLY products from the REAL PRODUCTS FOUND list above
-- Use EXACT URLs from search results
-- Product name must match the title/URL from search results
-- ALL text (description, benefits) must be in ${language}
-- Return up to 4 alternatives (1, 2, 3, or 4 is fine)
-- If no suitable alternatives found, return empty array
-- Do NOT invent products, URLs, or product names
-
-Return JSON array:
-[
-  {
-    "name": "EXACT product name from search result title",
-    "description": "Why this is sustainable (in ${language})",
-    "benefits": "Key benefits (in ${language})",
-    "sustainability_score": 85,
-    "where_to_buy": "Store name from URL",
-    "certifications": ["cert1", "cert2"],
-    "product_url": "EXACT URL from search results above",
-    "category": "${categoryName}"
-  }
-]
-
-RESPOND ENTIRELY IN: ${language}`;
-
-          const completion = await groqClient.chat.completions.create({
-            messages: [{ role: 'user', content: prompt }],
-            model: 'llama-3.3-70b-versatile',
-            temperature: 0.2,
-            response_format: { type: 'json_object' },
-          });
-
-          const responseContent = completion.choices[0].message.content || '{}';
-          let parsedAlternatives: any;
-
-          try {
-            parsedAlternatives = JSON.parse(responseContent);
-          } catch (e) {
-            console.error('❌ [ALTERNATIVES] JSON parse error:', e);
-            parsedAlternatives = {};
-          }
-
-          if (Array.isArray(parsedAlternatives)) {
-            alternatives = parsedAlternatives;
-          } else if (parsedAlternatives.alternatives && Array.isArray(parsedAlternatives.alternatives)) {
-            alternatives = parsedAlternatives.alternatives;
-          } else {
-            alternatives = [];
-          }
-
-          console.log(`✅ [ALTERNATIVES] Parsed ${alternatives.length} alternatives`);
-
-          // Validação: URLs devem existir nos resultados do Tavily
-          const tavilyUrls = (altSearchResults.results || []).map((r: any) => r.url);
-
-          alternatives = alternatives.filter((alt: any) => {
-            if (!alt.product_url) {
-              console.warn('⚠️ Alternative without URL, removed:', alt.name);
-              return false;
-            }
-
-            const urlExists = tavilyUrls.some((tavilyUrl: string) =>
-              alt.product_url === tavilyUrl ||
-              alt.product_url.includes(tavilyUrl) ||
-              tavilyUrl.includes(alt.product_url)
-            );
-
-            if (!urlExists) {
-              console.warn('⚠️ Alternative with invalid URL, removed:', alt.name, '→', alt.product_url);
-              return false;
-            }
-
-            return true;
-          });
-
-          console.log(`✅ [ALTERNATIVES] ${alternatives.length} valid alternatives after validation`);
-
-        } else {
-          console.warn('⚠️ [TAVILY] No search results');
-          alternatives = [];
-        }
-
-      } catch (tavilyError) {
-        console.error('❌ [ALTERNATIVES] Error:', tavilyError);
-        alternatives = [];
+      if (!isEcommerceLike) {
+        console.log(`🔍 [FILTER] Rejected: ${url} - Reason: not an e-commerce product page`);
+        return false;
       }
-    }
 
-    // ════════════════════════════════════════════════════════════
-    // STEP 8: MONTAR RESPOSTA FINAL
-    // ════════════════════════════════════════════════════════════
-    const originalBrand = productName.toLowerCase().split(' ')[0];
-    const originalKeywords = productName
-      .toLowerCase()
-      .split(' ')
-      .filter((w) => w.length > 3);
-
-    let validatedAlternatives = alternatives.filter((alt) => {
-      const altName = (alt.name || '').toLowerCase();
-
-      const hasSameBrand = altName.includes(originalBrand);
-      const similarKeywords = originalKeywords.filter((kw) => altName.includes(kw));
-      const isSameProduct = hasSameBrand && similarKeywords.length >= 2;
-
-      if (isSameProduct) {
-        console.warn('⚠️ PRODUTO DUPLICADO REMOVIDO:', alt.name);
+      if (!isSustainable) {
+        console.log(`🔍 [FILTER] Rejected: ${url} - Reason: lacks sustainability keywords`);
         return false;
       }
 
       return true;
     });
 
-    console.log('✅ Alternativas após filtro de duplicados:', validatedAlternatives.length);
+    console.log(`✅ [SEARCH] Filtered: ${validProducts.length}/${results.results.length}`);
 
-    if (validatedAlternatives.length < 2) {
-      console.warn('⚠️ Poucas alternativas válidas, retornando vazio');
-      validatedAlternatives = [];
+    let unique = Array.from(new Map(validProducts.map(p => [p.url, p])).values());
+
+    // Fallback permissivo: se nada passou, pegar até 5 e-commerces usando sinais gerais sem exigir sustentabilidade
+    if (unique.length === 0) {
+      console.log('⚠️ [SEARCH] No sustainable matches, applying ecommerce-only fallback');
+      const ecommerceOnly = rawResults.filter(r => {
+        const url = (r.url || '').toLowerCase();
+        if (!url) return false;
+
+        try {
+          const host = new URL(url).host.toLowerCase();
+          const isArticle = [
+            '/blog/', '/article/', '/news/', '/guide/', '/review', '/reviews',
+            'youtube.', 'wikipedia.', '/best-', '/top-'
+          ].some(p => url.includes(p));
+          if (isArticle) return false;
+
+          const hasUrlSignal = ecommerceUrlSignals.some(p => url.includes(p)) ||
+            url.includes('?srsltid=') || /\/[\w-]+-\d+/.test(url);
+          const text = `${r.title || ''} ${r.snippet || ''}`.toLowerCase();
+          const hasPrice = /(r\$|\$|€|£)/.test(text);
+          const hasPurchaseKeywords = ecommerceTextSignals.some(keyword => text.includes(keyword));
+          const hasSizeInfo = /\b(p|m|g|gg|\d{2})\b/.test(text);
+          const matchesEcommerce = ecommerceDomains.some(domain => host.includes(domain));
+
+          return matchesEcommerce || hasUrlSignal || hasPrice || hasPurchaseKeywords || hasSizeInfo;
+        } catch (_) {
+          return false;
+        }
+      });
+
+      unique = Array.from(new Map(ecommerceOnly.map(p => [p.url, p])).values()).slice(0, 5);
     }
 
-    const translations = await generateTranslations(userLanguage || 'en', groqClient);
+    const limited = unique.slice(0, 10);
 
-    const responsePayload = {
-      success: true,
-      analysis: {
-        sustainability_score: scoreResult.finalScore,
-        category,
-        summary: texts.summary,
-        strengths: texts.strengths,
-        weaknesses: texts.weaknesses,
-        recommendations: texts.recommendations,
-        breakdown: scoreResult.breakdown,
-        classification: scoreResult.classification,
-      },
-      score: scoreResult.finalScore,
-      breakdown: scoreResult.breakdown,
-      classification: scoreResult.classification,
-      summary: texts.summary,
-      strengths: texts.strengths,
-      weaknesses: texts.weaknesses,
-      recommendations: texts.recommendations,
-      productInfo: {
-        productName,
-        pageUrl: productInfo.pageUrl || '',
-        pageTitle: productInfo.pageTitle || '',
-        selectedText: productInfo.selectedText || '',
-      },
-      category,
-      originalProduct: {
-        name: productName,
-        category,
-        sustainability_score: scoreResult.finalScore,
-        breakdown: scoreResult.breakdown,
-        classification: scoreResult.classification,
-        summary: texts.summary,
-        strengths: texts.strengths,
-        weaknesses: texts.weaknesses,
-        recommendations: texts.recommendations,
-      },
-      alternatives: validatedAlternatives,
-      translations,
-      _meta: {
-        cached: cached || false,
-      },
-      timestamp: new Date().toISOString(),
-    };
+    console.log(`✅ [SEARCH] Returning ${limited.length} products after dedupe/limit`);
 
-    await setCachedAnalysis(productName, userCountry, category, responsePayload);
+    return limited.map(r => ({
+      title: r.title || 'Untitled Product',
+      url: r.url || '',
+      snippet: r.snippet || 'No description available'
+    }));
 
-    return res.status(200).json(responsePayload);
   } catch (error) {
-    console.error('❌ [ERROR]:', error);
-    return res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString(),
-      debug: {
-        productName,
-        categoryFromFrontend: categoryFromFrontend || 'not provided',
-        categoryUsed: category || 'undefined',
-        availableCategories,
-      },
-    });
+    console.error('❌ [SEARCH] Error:', error);
+    return [];
   }
 }
+
+// ===== TRADUZIR (CORRIGIDO) =====
+async function translateProductName(name: string): Promise<string> {
+  if (!name || name.trim().length === 0) {
+    console.log('⚠️ [TRANSLATE] Empty product name provided');
+    return '';
+  }
+  // Se já está em inglês, retornar
+  if (/^[a-zA-Z0-9\s\-_]+$/.test(name)) {
+    return name;
+  }
+
+  // ✅ CORREÇÃO 6: DICIONÁRIO BÁSICO DE TRADUÇÃO (dinâmico do JSON)
+  const commonTranslations = alternativesConfig.common_translations;
+  const basicTranslations: Record<string, string> = commonTranslations || {
+    // Fallback caso o JSON falhe
+    'sapato': 'shoe', 'sapatos': 'shoes',
+    'salto': 'heel', 'saltos': 'heels',
+    'tênis': 'sneaker', 'tenis': 'sneaker'
+  };
+  
+  // Tentar tradução básica primeiro
+  const normalizedName = name || '';
+  const words = normalizedName.toLowerCase().split(/\s+/);
+  const basicTranslation = words
+    .map(word => basicTranslations[word] || word)
+    .join(' ');
+  
+  // Se conseguiu traduzir algo, usar
+  if (basicTranslation !== normalizedName.toLowerCase()) {
+    console.log(`🌐 [TRANSLATE] Basic: "${name}" → "${basicTranslation}"`);
+    return basicTranslation;
+  }
+
+  const groqApiKey = process.env.GROQ_API_KEY;
+  if (!groqApiKey) {
+    console.log('⚠️ [TRANSLATE] No API key, using basic translation');
+    return basicTranslation;
+  }
+
+  try {
+    const groq = new Groq({ apiKey: groqApiKey });
+    const completion = await groq.chat.completions.create({
+      messages: [
+        { role: 'system', content: 'Translate to English. Return ONLY the translation, nothing else.' },
+        { role: 'user', content: name }
+      ],
+      model: config.groq.defaultModel,
+      temperature: config.groq.operations.translation.temperature,
+      max_tokens: config.groq.operations.translation.maxTokens
+    });
+
+    const translation = completion.choices[0]?.message?.content?.trim();
+    if (translation && translation.length > 0) {
+      console.log(`🌐 [TRANSLATE] AI: "${name}" → "${translation}"`);
+      return translation;
+    }
+    
+    console.log('⚠️ [TRANSLATE] AI failed, using basic translation');
+    return basicTranslation;
+    
+  } catch (error) {
+    console.error('❌ [TRANSLATE] Error:', error);
+    return basicTranslation;
+  }
+}
+
+// ===== IDENTIFICAR CATEGORIA (REFATORADA - CONFIG-DRIVEN) =====
+async function identifyCategory(productInfo: ProductInfo): Promise<string> {
+  const name = productInfo.productName || productInfo.product_name || '';
+  const desc = productInfo.description || '';
+  const title = productInfo.pageTitle || '';
+  const url = productInfo.pageUrl || productInfo.product_url || '';
+
+  // 🔎 Heuristic categorization to distinguish software vs physical supplies
+  try {
+    const heuristicCategory = categorizeProduct(
+      name,
+      `${title} ${desc}`
+    );
+
+    if (heuristicCategory) {
+      if (!VALID_CATEGORIES[heuristicCategory]) {
+        throw new Error(`Internal error: Invalid category "${heuristicCategory}"`);
+      }
+
+      console.log('✅ [CATEGORY] Heuristic match:', heuristicCategory);
+      return heuristicCategory;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (message.includes('too generic')) {
+      throw error;
+    }
+    console.log('ℹ️ [CATEGORY] Heuristic not conclusive:', error);
+  }
+
+  const translated = await translateProductName(name);
+  if (!name && !desc && !title && !url) {
+    console.error('❌ [CATEGORY] No product information provided');
+    throw new Error(
+      'Product information is required. Please provide at least a product name, description, title, or URL.'
+    );
+  }
+  const weights = alternativesConfig.scoring_config.source_weights;
+
+  const textSample = [translated, name, title, desc].filter(Boolean).join(' | ');
+  console.log('🔍 [CATEGORY] Text sample:', textSample ? textSample.substring(0, 150) : '(empty)');
+
+  const sources: ScoringSource[] = [
+    { text: translated, weight: weights.product_name_translated },
+    { text: name, weight: weights.product_name_original },
+    { text: title, weight: weights.page_title },
+    { text: desc, weight: weights.description }
+  ];
+
+  const categoryScores = calculateCategoryScores(sources);
+  const filteredScores = applyExclusionRules(categoryScores, translated);
+  const winner = selectWinner(filteredScores);
+
+  logCategorizationResult(filteredScores, winner);
+
+  if (!winner || winner.confidence === 'low') {
+    console.log('⚠️ [CATEGORY] Low confidence, using AI fallback');
+    return await classifyWithAI(name, translated, title);
+  }
+
+  return winner.category;
+}
+
+function categorizeProduct(productName: string, productType: string): string {
+  const nameLower = (productName || '').toLowerCase();
+  const typeLower = (productType || '').toLowerCase();
+
+  const isTooShort = productName.trim().length < 3;
+  const isJustNumbers = /^\d+$/.test(productName.trim());
+  const isGenericWord = ['product', 'item', 'thing', 'test', 'xyz', 'abc'].includes(
+    nameLower.trim()
+  );
+
+  if (isTooShort || isJustNumbers || isGenericWord) {
+    throw new Error('Could not identify product category - product name too generic or incomplete');
+  }
+
+  throw new Error('Use identifyCategory() instead');
+}
+
+function validateAlternativeUrls(
+  alternatives: Alternative[] = [],
+  realProducts: Array<{ title: string; url: string; snippet: string }> = []
+): Alternative[] {
+  const realUrls = new Set(
+    realProducts
+      .filter((p) => p && typeof p.url === 'string' && p.url.trim().length > 0)
+      .map((p) => p.url.trim())
+  );
+
+  return alternatives.map((alternative) => {
+    const url = alternative?.product_url?.trim();
+    const isRealUrl = url ? realUrls.has(url) : false;
+
+    return {
+      ...alternative,
+      product_url: isRealUrl ? url! : null
+    };
+  });
+}
+
+// ===== ANALISAR COM GROQ (CORRIGIDO) =====
+async function analyzeWithGroq(
+  productInfo: ProductInfo,
+  category: string,
+  categoryData: CategoryData,
+  productType: string,
+  realProducts: Array<{title: string, url: string, snippet: string}>,
+  userCountry: string
+): Promise<GroqAnalysisResult> {
+  
+  const groqApiKey = process.env.GROQ_API_KEY;
+  if (!groqApiKey) {
+    throw new Error('GROQ_API_KEY not configured');
+  }
+
+  const groq = new Groq({ apiKey: groqApiKey });
+  const productName = productInfo.productName || productInfo.product_name || '';
+
+  const localEcommerce = getLocalEcommerce(userCountry);
+
+  // Build criteria text
+  const criteria = Object.entries(categoryData.sustainability_criteria)
+    .map(([key, val]) => `${key} (weight ${val.weight}): ${val.guidelines.join('; ')}`)
+    .join('\n');
+
+  // Build products list
+  const validProducts = (realProducts || [])
+    .filter((p) => p && typeof p === 'object' && p.title && p.url)
+    .map((p) => ({
+      title: p.title || 'Untitled',
+      url: p.url || 'N/A',
+      snippet: p.snippet || 'No description available'
+    }));
+
+  const productsText = validProducts.length > 0
+    ? `\n\nREAL PRODUCTS FOUND (${validProducts.length} total):\n${
+        validProducts.map((p, i) =>
+          `${i + 1}. ${p.title}\n   URL: ${p.url}\n   ${(p.snippet || 'No description available').substring(0, 100)}...\n`
+        ).join('\n')
+      }`
+    : '\n\nNO PRODUCTS FOUND - Suggest well-known sustainable brands in the user\'s country.';
+
+  const prompt = `You are a sustainability expert analyzing products for users worldwide.
+
+═══════════════════════════════════════════════════════════════
+USER CONTEXT:
+═══════════════════════════════════════════════════════════════
+- User Country: ${userCountry}
+- Product Name: ${productName}
+- Local E-commerce Sites: ${localEcommerce.slice(0, 5).join(', ')}
+
+═══════════════════════════════════════════════════════════════
+DYNAMIC LOCALIZATION (CRITICAL):
+═══════════════════════════════════════════════════════════════
+
+1. LANGUAGE DETECTION:
+   - Analyze the product name: "${productName}"
+   - Determine the language automatically
+   - Respond in the SAME LANGUAGE as the product name
+   - If product name is in Korean, respond in Korean
+   - If product name is in German, respond in German
+   - If product name is in Spanish, respond in Spanish
+   - And so on for ANY language
+
+2. E-COMMERCE SITES:
+   - User is in ${userCountry}
+   - Suggest products available in these local sites: ${localEcommerce.join(', ')}
+   - Provide realistic product URLs from local e-commerce
+
+3. CERTIFICATIONS:
+   - Include certifications relevant to ${userCountry}
+   - Research what certifications are used in this country
+
+═══════════════════════════════════════════════════════════════
+SCORING METHODOLOGY (MANDATORY):
+═══════════════════════════════════════════════════════════════
+
+You MUST calculate sustainability_score using weighted average of criteria scores.
+
+STEP 1 - Analyze the product name for material indicators:
+Look for keywords that indicate sustainable materials:
+- Natural fibers: bamboo, bambu, linen, linho, hemp, cânhamo, cotton, algodão
+- Organic: organic, orgânico, orgânica, bio
+- Recycled: recycled, reciclado, reciclada, upcycled
+
+If found, the "materials" criterion should score HIGH (75-95).
+
+STEP 2 - Score each criterion (0-100):
+For each criterion in the category, evaluate based on:
+- Evidence of compliance with guidelines: 70-100
+- Sustainable material in product name (for materials criterion): 75-95
+- No information available: 50 (neutral, NOT zero)
+- Evidence of non-compliance: 0-30
+
+STEP 3 - Calculate weighted score:
+Final score = sum of (criterion_score × criterion_weight) for all criteria
+
+STEP 4 - Validate your score:
+- Product with sustainable material in name + no negative indicators = minimum 55
+- Product with certified sustainable material = minimum 70
+- Product with synthetic/conventional materials = maximum 50
+
+CRITICAL: The product name "${productName}" - analyze it for material keywords BEFORE scoring.
+
+═══════════════════════════════════════════════════════════════
+EXAMPLES:
+═══════════════════════════════════════════════════════════════
+
+Example 1 - Korean product:
+Input: "남성용 가을 겨울 패턴 캐주얼 투피스"
+Country: KR
+Response: {
+  "summary": "이 제품은 합성 소재를 사용하여...",
+  "weaknesses": ["합성 소재", "환경 인증 없음"],
+  "where_to_buy": "Coupang, Gmarket"
+}
+
+Example 2 - German product:
+Input: "Lässiges zweiteiliges Set für Herren"
+Country: DE
+Response: {
+  "summary": "Dieses Produkt hat eine niedrige...",
+  "weaknesses": ["Synthetische Materialien", "Keine Zertifizierungen"],
+  "where_to_buy": "Amazon Deutschland, MediaMarkt"
+}
+
+Example 3 - Portuguese product:
+Input: "Conjunto casual de duas peças"
+Country: BR
+Response: {
+  "summary": "Este produto tem baixo impacto...",
+  "weaknesses": ["Materiais sintéticos", "Sem certificações"],
+  "where_to_buy": "Mercado Livre, Americanas"
+}
+
+═══════════════════════════════════════════════════════════════
+IMPORTANT:
+═══════════════════════════════════════════════════════════════
+
+- Do NOT ask what language to use
+- Do NOT default to English unless product name is in English
+- Detect language automatically from product name
+- Match the language exactly
+- This works for ANY language: Korean, Japanese, Chinese, Arabic, Hindi, etc.
+
+Now analyze this product:
+Product: ${productName}
+Category: ${categoryData.name}
+Country: ${userCountry}
+URL: ${productInfo.pageUrl || 'N/A'}
+
+SUSTAINABILITY CRITERIA FOR THIS CATEGORY:
+${criteria}
+
+RELEVANT CERTIFICATIONS: ${categoryData.certifications.join(', ')}
+${productsText}
+
+═══════════════════════════════════════════════════════════════
+CRITICAL URL RULES:
+════════════════════════════════════════════════════════════════
+
+- ONLY use URLs from the REAL PRODUCTS FOUND list above
+- If suggesting a product not in the list, set product_url to null
+- NEVER invent or guess URLs
+- NEVER create URLs based on product names
+- Invalid example: "mercadolivre.com.br/produto-nome" (WRONG - invented)
+- Valid example: Use exact URL from search results or null
+
+═══════════════════════════════════════════════════════════════
+CRITICAL VALIDATION RULES:
+═══════════════════════════════════════════════════════════════
+
+1. Alternatives MUST be the SAME product type as the original
+2. You MUST provide at least 4 sustainable alternatives
+3. Each alternative must have sustainability_score >= 70
+4. Use REAL products from the search results when available
+5. If no real products found, suggest well-known sustainable brands
+
+═══════════════════════════════════════════════════════════════
+REQUIRED JSON RESPONSE FORMAT:
+═══════════════════════════════════════════════════════════════
+
+{
+  "originalProduct": {
+    "name": "${productName}",
+    "category": "${category}",
+    "sustainability_score": <number 0-100>,
+    "summary": "<analysis in detected language>",
+    "environmental_impact": {
+      "carbon_footprint": "<assessment>",
+      "water_usage": "<assessment>",
+      "recyclability": "<assessment>",
+      "toxicity": "<assessment>"
+    },
+    "strengths": ["<strength in detected language>", "<strength in detected language>"],
+    "weaknesses": ["<weakness in detected language>", "<weakness in detected language>"],
+    "certifications_found": ["<certifications>"],
+    "recommendations": ["<recommendation in detected language>", "<recommendation in detected language>"],
+  },
+  "alternatives": [
+    {
+      "name": "<product name in detected language>",
+      "description": "<clear description in detected language>",
+      "benefits": "<why more sustainable, in detected language>",
+      "sustainability_score": <number 70-100>,
+      "where_to_buy": "<prefer: ${localEcommerce[0]}, ${localEcommerce[1]}, or ${localEcommerce[2]}>",
+      "certifications": ["<relevant certifications>"],
+      "product_url": "<URL from local e-commerce if available, else null>"
+    }
+  ]
+}
+
+═══════════════════════════════════════════════════════════════
+FINAL REMINDERS:
+═══════════════════════════════════════════════════════════════
+
+1. RESPOND ENTIRELY in the detected language from the product name
+2. PRIORITIZE LOCAL E-COMMERCE: ${localEcommerce[0]}, ${localEcommerce[1]}
+3. PROVIDE 4 ALTERNATIVES MINIMUM
+4. RETURN ONLY VALID JSON - NO MARKDOWN, NO COMMENTS
+
+Begin analysis now.`;
+
+  try {
+    const completion = await groq.chat.completions.create({
+      messages: [
+        { role: 'system', content: 'Return valid JSON only. Use real products. Match product types strictly.' },
+        { role: 'user', content: prompt }
+      ],
+      model: config.groq.defaultModel,
+      temperature: config.groq.operations.analysis.temperature,
+      max_tokens: config.groq.operations.analysis.maxTokens,
+      response_format: { type: 'json_object' }
+    });
+
+    const content = completion.choices[0]?.message?.content;
+    if (!content) throw new Error('No response from Groq');
+
+    const result = JSON.parse(content) as GroqAnalysisResult;
+
+    const validatedAlternatives = validateAlternativeUrls(
+      result.alternatives || [],
+      validProducts
+    );
+
+    if (validatedAlternatives) {
+      result.alternatives = validatedAlternatives.filter(alt => {
+        if (!alt || !alt.name) {
+          return false;
+        }
+
+        const altName = (alt.name || '').toLowerCase();
+
+        if (/\b(book|guide|article|manual|course|tutorial)\b/.test(altName)) {
+          return false;
+        }
+
+        if (alt.sustainability_score < config.sustainability.minAlternativeScore) {
+          return false;
+        }
+
+        return true;
+      });
+    }
+
+    console.log(`🌿 [VALIDATION] Final alternatives: ${result.alternatives.length}`);
+    return result;
+
+  } catch (error) {
+    console.error('❌ [GROQ] Error:', error);
+    throw error;
+  }
+}
+
+export { identifyCategory };

@@ -74,113 +74,47 @@ export interface ProductInfo {
 
 // ===== TIPOS CORRIGIDOS PARA alternatives.json =====
 
-export interface EvaluationThreshold {
-  /** Target threshold and description for each performance level. */
-  threshold: number;
-  description: string;
-}
-
-export interface EvaluationCriteria {
-  excellent: EvaluationThreshold;
-  good: EvaluationThreshold;
-  acceptable: EvaluationThreshold;
-  poor: EvaluationThreshold;
-}
-
-export interface Indicator {
-  /** Unique identifier for the indicator. */
-  id: string;
-  /** Human-readable name of the indicator. */
-  name: string;
-  /** Detailed description of what the indicator measures. */
-  description: string;
-  /** Optional measurement guidance for the indicator. */
-  measurement?: string;
-  /** Optional target or threshold description. */
-  target?: string;
-  /** Sources that can be used to validate the indicator. */
-  data_sources?: string[];
-  /** Structured evaluation criteria when available. */
-  evaluation_criteria?: EvaluationCriteria;
-  [key: string]: unknown;
-}
-
-export interface CriterionConfig {
+// Critério de sustentabilidade individual
+export interface SustainabilityCriterion {
   weight: number;
-  indicators: Indicator[];
+  guidelines: string[];
 }
 
-export interface CategoryConfig {
+// Objeto com múltiplos critérios
+export interface SustainabilityCriteria {
+  [key: string]: SustainabilityCriterion;
+}
+
+// Estrutura de uma categoria no alternatives.json
+export interface CategoryData {
   name: string;
   keywords: string[];
-  sustainability_criteria: Record<string, CriterionConfig>;
-  certifications?: string[];
-  references?: string[];
+  sustainability_criteria: SustainabilityCriteria;
+  certifications: string[];
+  references: string[];
   brazilian_brands?: string[];
-  keyword_synonyms?: Record<string, string[]>;
-  exclusion_keywords?: string[];
-  product_types?: string[];
-  [key: string]: unknown;
+  [key: string]: any; // Permite campos adicionais dinâmicos
 }
 
-export type CategoryData = CategoryConfig;
-
-export interface ScoringConfig {
-  source_weights: Record<string, number>;
-  validation_thresholds: {
-    minimum_score: number;
-    confidence_ratio: number;
-    exclusion_penalty: number;
+// Metadata do alternatives.json
+export interface AlternativesMetadata {
+  total_categories: number;
+  new_categories_added: string[];
+  coverage: string;
+  standards_referenced: string[];
+  special_focus: {
+    [key: string]: string;
   };
 }
 
-export interface EvaluationMethodology {
-  description?: string;
-  scoring?: Record<string, string>;
-  steps?: string[];
-  llm_prompt_template?: string;
-  [key: string]: unknown;
-}
-
-export interface AlternativesConfig {
+// Estrutura completa do alternatives.json
+export interface AlternativesData {
   version: string;
-  description?: string;
-  lastUpdated?: string;
-  source?: string;
-  categories: Record<string, CategoryConfig>;
-  scoring_config?: ScoringConfig;
-  evaluation_methodology?: EvaluationMethodology;
-  metadata?: Record<string, unknown>;
-  general_sustainability_principles?: Record<string, string[]>;
-  brazilian_certifications?: Record<string, string>;
-  common_translations?: Record<string, string>;
-  incompatible_types?: Record<string, string[]>;
-  text_processing?: Record<string, unknown>;
-  'Web Search_config'?: Record<string, unknown>;
-  [key: string]: unknown;
-}
-
-export interface CriterionEvaluation {
-  score: number;
-  evidence: string[];
-}
-
-export interface ProductFacts {
-  [criterionName: string]: CriterionEvaluation | string[] | string | undefined;
-  certifications?: string[];
-  origin?: string;
-}
-
-export interface ScoreBreakdown {
-  [criterionName: string]: {
-    score: number;
-    weight: number;
-    weighted: number;
+  description: string;
+  lastUpdated: string;
+  source: string;
+  metadata: AlternativesMetadata;
+  categories: {
+    [key: string]: CategoryData;
   };
-}
-
-export interface SustainabilityScore {
-  finalScore: number;
-  breakdown: ScoreBreakdown;
-  classification: 'excellent' | 'good' | 'acceptable' | 'poor';
 }
