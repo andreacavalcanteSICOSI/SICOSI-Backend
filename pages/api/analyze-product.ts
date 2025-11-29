@@ -2,6 +2,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import Groq from 'groq-sdk';
 import { Redis } from '@upstash/redis';
+import tavily from '@tavily/core';
 import alternativesData from '../../data/alternatives.json';
 import config from '../../config';
 import webSearchClient from '../../services/web-search-client';
@@ -723,126 +724,158 @@ export default async function handler(
     // ════════════════════════════════════════════════════════════
     let alternatives: any[] = [];
 
-    if (scoreResult.finalScore < config.sustainability.minScore) {
+    if (scoreResult.finalScore < 70) {
       console.log('🔍 [ALTERNATIVES] Score below threshold, searching alternatives...');
 
-      const altSearchQuery = `sustainable ${category} alternatives ${productName}`;
-      const altSearchResults = await webSearchClient.search(altSearchQuery, {
-        maxResults: 10,
-        includeAnswer: false,
-        searchDepth: 'basic',
-      });
+      try {
+        const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY });
 
-      const filteredAltResults = (altSearchResults.results || []).filter((r: any) => {
-        const url = r.url || '';
-        const title = r.title || '';
-        const snippet = (r.content || r.snippet || '') as string;
-        const article = isArticleUrl(url, articlePatterns);
-        const ecommerce = isEcommerceResult(
-          url,
-          title,
-          snippet,
-          ecommerceDomains,
-          ecommerceUrlSignals,
-          ecommerceTextSignals,
-        );
-        const hasSustainabilitySignal = containsAny(`${title} ${snippet}`, sustainKeywords);
+        const productName = productInfo.productName || productInfo.selectedText || 'produto';
+        const categoryName = category || 'produto sustentável';
+        const pageUrl = productInfo.pageUrl || '';
+        const language = userLanguage || 'pt';
 
-        if (article) return false;
-        if (ecommerce && !hasSustainabilitySignal) return false;
+        // Detectar país pela URL
+        let countryCode = 'br';
+        let countryName = 'Brasil';
 
-        return true;
-      });
+        if (pageUrl.includes('.com.br')) {
+          countryCode = 'br';
+          countryName = 'Brasil';
+        } else if (pageUrl.includes('.com') && !pageUrl.includes('.com.')) {
+          countryCode = 'us';
+          countryName = 'United States';
+        } else if (pageUrl.includes('.de')) {
+          countryCode = 'de';
+          countryName = 'Germany';
+        } else if (pageUrl.includes('.kr') || pageUrl.includes('.co.kr')) {
+          countryCode = 'kr';
+          countryName = 'South Korea';
+        } else if (pageUrl.includes('.jp')) {
+          countryCode = 'jp';
+          countryName = 'Japan';
+        } else if (pageUrl.includes('.uk') || pageUrl.includes('.co.uk')) {
+          countryCode = 'uk';
+          countryName = 'United Kingdom';
+        }
 
-      const altResultsForPrompt = filteredAltResults.length
-        ? filteredAltResults
-        : altSearchResults.results || [];
+        console.log('🌍 [COUNTRY] Detected:', countryName, `(${countryCode})`);
 
-      if (altResultsForPrompt.length) {
-        const tavilyResults = { results: altResultsForPrompt };
-        const alternativesPrompt = `You are a sustainability expert.
+        // Busca específica para o país
+        const altSearchQuery = `sustainable ${categoryName} alternatives eco-friendly buy ${countryName}`;
 
-ORIGINAL PRODUCT (DO NOT SUGGEST THIS):
-- Exact Name: ${productName}
-- Brand: ${productName.split(' ')[0]} (extract brand if possible)
-- Score: ${scoreResult.finalScore}/100
-- Category: ${category}
-- Language: ${userLanguage}
+        console.log('🔍 [TAVILY] Query:', altSearchQuery);
 
-CRITICAL: You must NOT suggest the same product from a different store!
-A product is considered "the same" if it has:
-- Same brand name
-- Same product type
-- Same or similar quantity/size
-
-SEARCH RESULTS FROM WEB:
-${tavilyResults.results
-  .slice(0, 10)
-  .map(
-    (r: any, i: number) => `
-${i + 1}. Title: ${r.title}
-   URL: ${r.url}
-   Content: ${r.content?.substring(0, 300) || 'N/A'}`,
-  )
-  .join('\n')}
-
-TASK:
-Analyze the search results and return EXACTLY 4 DIFFERENT sustainable alternatives that are:
-
-1. ✅ DIFFERENT products (different brand OR different type OR eco-friendly version)
-2. ✅ More sustainable (score >= 70)
-3. ✅ Same category as original
-4. ✅ Use ONLY real URLs from search results above
-5. ✅ Available in country: ${userCountry}
-
-EXAMPLES OF VALID ALTERNATIVES for "Cotonetes Johnson & Johnson":
-✅ "Cotonetes de Bambu Reutilizáveis" (different material)
-✅ "Hastes Flexíveis Orgânicas Certificadas" (different brand + eco)
-✅ "Cotonetes Biodegradáveis 100% Algodão" (eco-friendly version)
-
-EXAMPLES OF INVALID ALTERNATIVES:
-❌ "Cotonetes Johnson & Johnson" (same product, different store)
-❌ "Hastes Flexíveis Johnson & Johnson" (same brand, same product)
-❌ "Johnson & Johnson Cotton Swabs" (same product, different language)
-
-VALIDATION RULES:
-- If search results only show the same product in different stores → return empty array
-- If you find fewer than 4 valid alternatives → return only the valid ones
-- Minimum 2 alternatives required, otherwise return []
-- Each alternative MUST be a genuinely different product
-
-RESPONSE FORMAT (JSON):
-{
-  "alternatives": [
-    {
-      "name": "Product name in ${userLanguage}",
-      "description": "Brief description in ${userLanguage}",
-      "sustainability_score": 85,
-      "benefits": "Environmental benefits in ${userLanguage}",
-      "certifications": ["ISO 14001", "FSC"],
-      "product_url": "REAL URL from Tavily results",
-      "where_to_buy": "Store name",
-      "category": "${category}"
-    }
-  ]
-}
-
-RESPOND IN LANGUAGE: ${userLanguage}
-`;
-
-        const completion = await groqClient.chat.completions.create({
-          messages: [{ role: 'user', content: alternativesPrompt }],
-          model: 'llama-3.3-70b-versatile',
-          temperature: 0.2,
-          response_format: { type: 'json_object' },
+        const altSearchResults = await tavilyClient.search(altSearchQuery, {
+          maxResults: 15,
+          includeAnswer: false,
+          searchDepth: 'basic',
         });
 
-        const parsedAlternatives = JSON.parse(completion.choices[0].message.content || '{}');
-        const parsedArray = (parsedAlternatives as any)?.alternatives;
-        alternatives = Array.isArray(parsedArray) ? parsedArray : [];
-      }
+        console.log('✅ [TAVILY] Found:', altSearchResults.results?.length || 0, 'results');
 
-      console.log(`✅ [ALTERNATIVES] Found ${alternatives.length} alternatives`);
+        if (altSearchResults.results?.length) {
+          const prompt = `You are a sustainable purchasing assistant. Suggest up to 4 alternatives using ONLY the real search results below.
+
+CONTEXT:
+- User country: ${countryName}
+- User language: ${language}
+- Category: ${categoryName}
+
+REAL PRODUCTS FOUND:
+${altSearchResults.results
+  .map(
+    (r: any, i: number) => 
+      `${i + 1}. ${r.title}\nURL: ${r.url}\nSnippet: ${(r.content || r.snippet || '').substring(0, 200)}`
+  )
+  .join('\n\n')}
+
+CRITICAL RULES:
+- Suggest ONLY products from the REAL PRODUCTS FOUND list above
+- Use EXACT URLs from search results
+- Product name must match the title/URL from search results
+- ALL text (description, benefits) must be in ${language}
+- Return up to 4 alternatives (1, 2, 3, or 4 is fine)
+- If no suitable alternatives found, return empty array
+- Do NOT invent products, URLs, or product names
+
+Return JSON array:
+[
+  {
+    "name": "EXACT product name from search result title",
+    "description": "Why this is sustainable (in ${language})",
+    "benefits": "Key benefits (in ${language})",
+    "sustainability_score": 85,
+    "where_to_buy": "Store name from URL",
+    "certifications": ["cert1", "cert2"],
+    "product_url": "EXACT URL from search results above",
+    "category": "${categoryName}"
+  }
+]
+
+RESPOND ENTIRELY IN: ${language}`;
+
+          const completion = await groqClient.chat.completions.create({
+            messages: [{ role: 'user', content: prompt }],
+            model: 'llama-3.3-70b-versatile',
+            temperature: 0.2,
+            response_format: { type: 'json_object' },
+          });
+
+          const responseContent = completion.choices[0].message.content || '{}';
+          let parsedAlternatives: any;
+
+          try {
+            parsedAlternatives = JSON.parse(responseContent);
+          } catch (e) {
+            console.error('❌ [ALTERNATIVES] JSON parse error:', e);
+            parsedAlternatives = {};
+          }
+
+          if (Array.isArray(parsedAlternatives)) {
+            alternatives = parsedAlternatives;
+          } else if (parsedAlternatives.alternatives && Array.isArray(parsedAlternatives.alternatives)) {
+            alternatives = parsedAlternatives.alternatives;
+          } else {
+            alternatives = [];
+          }
+
+          console.log(`✅ [ALTERNATIVES] Parsed ${alternatives.length} alternatives`);
+
+          // Validação: URLs devem existir nos resultados do Tavily
+          const tavilyUrls = (altSearchResults.results || []).map((r: any) => r.url);
+
+          alternatives = alternatives.filter((alt: any) => {
+            if (!alt.product_url) {
+              console.warn('⚠️ Alternative without URL, removed:', alt.name);
+              return false;
+            }
+
+            const urlExists = tavilyUrls.some((tavilyUrl: string) =>
+              alt.product_url === tavilyUrl ||
+              alt.product_url.includes(tavilyUrl) ||
+              tavilyUrl.includes(alt.product_url)
+            );
+
+            if (!urlExists) {
+              console.warn('⚠️ Alternative with invalid URL, removed:', alt.name, '→', alt.product_url);
+              return false;
+            }
+
+            return true;
+          });
+
+          console.log(`✅ [ALTERNATIVES] ${alternatives.length} valid alternatives after validation`);
+
+        } else {
+          console.warn('⚠️ [TAVILY] No search results');
+          alternatives = [];
+        }
+
+      } catch (tavilyError) {
+        console.error('❌ [ALTERNATIVES] Error:', tavilyError);
+        alternatives = [];
+      }
     }
 
     // ════════════════════════════════════════════════════════════
