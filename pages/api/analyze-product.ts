@@ -1,11 +1,11 @@
 // pages/api/analyze-product.ts
 
-import type { NextApiRequest, NextApiResponse } from 'next';
-import Groq from 'groq-sdk';
-import alternativesData from '../../data/alternatives.json';
-import config from '../../config';
-import webSearchClient from '../../services/web-search-client';
-import { Redis } from '@upstash/redis';
+import type { NextApiRequest, NextApiResponse } from "next";
+import Groq from "groq-sdk";
+import alternativesData from "../../data/alternatives.json";
+import config from "../../config";
+import webSearchClient from "../../services/web-search-client";
+import { Redis } from "@upstash/redis";
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL!,
@@ -15,11 +15,14 @@ const redis = new Redis({
 const CACHE_TTL_SECONDS = 24 * 60 * 60; // 24 horas
 
 function getCacheKey(productName: string, userCountry: string): string {
-  const normalized = productName.toLowerCase().trim().replace(/\s+/g, ' ');
+  const normalized = productName.toLowerCase().trim().replace(/\s+/g, " ");
   return `sicosi:${normalized}:${userCountry}`;
 }
 
-async function getCachedAnalysis(productName: string, userCountry: string): Promise<GroqAnalysisResult | null> {
+async function getCachedAnalysis(
+  productName: string,
+  userCountry: string
+): Promise<GroqAnalysisResult | null> {
   try {
     const key = getCacheKey(productName, userCountry);
     const cached = await redis.get<GroqAnalysisResult>(key);
@@ -32,18 +35,22 @@ async function getCachedAnalysis(productName: string, userCountry: string): Prom
     console.log(`📭 [CACHE] Redis MISS: ${key.substring(0, 50)}`);
     return null;
   } catch (error) {
-    console.error('❌ [CACHE] Redis error:', error);
+    console.error("❌ [CACHE] Redis error:", error);
     return null;
   }
 }
 
-async function setCachedAnalysis(productName: string, userCountry: string, result: GroqAnalysisResult): Promise<void> {
+async function setCachedAnalysis(
+  productName: string,
+  userCountry: string,
+  result: GroqAnalysisResult
+): Promise<void> {
   try {
     const key = getCacheKey(productName, userCountry);
     await redis.set(key, result, { ex: CACHE_TTL_SECONDS });
     console.log(`💾 [CACHE] Redis SAVED: ${key.substring(0, 50)} (TTL: 24h)`);
   } catch (error) {
-    console.error('❌ [CACHE] Redis save error:', error);
+    console.error("❌ [CACHE] Redis save error:", error);
   }
 }
 
@@ -64,59 +71,78 @@ function validateAndCorrectCountry(
   pageUrl: string | undefined,
   productName: string
 ): string {
-  console.log('🔍 [VALIDATE] Cross-validating country...');
-  console.log('📍 [VALIDATE] Input:', { userCountry, pageUrl: pageUrl || 'N/A', productName: productName.substring(0, 50) });
+  console.log("🔍 [VALIDATE] Cross-validating country...");
+  console.log("📍 [VALIDATE] Input:", {
+    userCountry,
+    pageUrl: pageUrl || "N/A",
+    productName: productName.substring(0, 50),
+  });
 
-  const signals: { source: string; country: string; confidence: 'high' | 'medium' | 'low' }[] = [];
+  const signals: {
+    source: string;
+    country: string;
+    confidence: "high" | "medium" | "low";
+  }[] = [];
 
   // SIGNAL 1: userCountry from frontend
-  signals.push({ source: 'frontend', country: userCountry, confidence: 'medium' });
+  signals.push({
+    source: "frontend",
+    country: userCountry,
+    confidence: "medium",
+  });
 
   // SIGNAL 2: Domain TLD
-  const domainMatch = (pageUrl || '').match(/\.(com\.br|com\.mx|es|fr|de|it|co\.uk|com\.au|ca)($|\/)/);
+  const domainMatch = (pageUrl || "").match(
+    /\.(com\.br|com\.mx|es|fr|de|it|co\.uk|com\.au|ca)($|\/)/
+  );
   if (domainMatch) {
     const tld = domainMatch[1];
     const tldToCountry: Record<string, string> = {
-      'com.br': 'BR',
-      'com.mx': 'MX',
-      'es': 'ES',
-      'fr': 'FR',
-      'de': 'DE',
-      'it': 'IT',
-      'co.uk': 'GB',
-      'com.au': 'AU',
-      'ca': 'CA'
+      "com.br": "BR",
+      "com.mx": "MX",
+      es: "ES",
+      fr: "FR",
+      de: "DE",
+      it: "IT",
+      "co.uk": "GB",
+      "com.au": "AU",
+      ca: "CA",
     };
     const domainCountry = tldToCountry[tld];
     if (domainCountry) {
-      signals.push({ source: 'domain', country: domainCountry, confidence: 'high' });
+      signals.push({
+        source: "domain",
+        country: domainCountry,
+        confidence: "high",
+      });
       console.log(`✅ [VALIDATE] Domain signal: ${tld} → ${domainCountry}`);
     }
   }
 
   // SIGNAL 3: Product name language - REMOVED
   // Let Groq handle language detection automatically
-  console.log('ℹ️ [VALIDATE] Language detection delegated to Groq');
+  console.log("ℹ️ [VALIDATE] Language detection delegated to Groq");
 
-  console.log('📊 [VALIDATE] All signals:', signals);
+  console.log("📊 [VALIDATE] All signals:", signals);
 
   // Count votes by country (weighted by confidence)
   const votes: Record<string, number> = {};
-  signals.forEach(signal => {
-    const weight = signal.confidence === 'high' ? 2 : 1;
+  signals.forEach((signal) => {
+    const weight = signal.confidence === "high" ? 2 : 1;
     votes[signal.country] = (votes[signal.country] || 0) + weight;
   });
 
-  console.log('🗳️ [VALIDATE] Votes:', votes);
+  console.log("🗳️ [VALIDATE] Votes:", votes);
 
   // Get winner
-  const winner = Object.entries(votes)
-    .sort(([_, a], [__, b]) => b - a)[0];
+  const winner = Object.entries(votes).sort(([_, a], [__, b]) => b - a)[0];
 
   const correctedCountry = winner[0];
 
   if (correctedCountry !== userCountry) {
-    console.log(`🔄 [VALIDATE] Country corrected: ${userCountry} → ${correctedCountry}`);
+    console.log(
+      `🔄 [VALIDATE] Country corrected: ${userCountry} → ${correctedCountry}`
+    );
     console.log(`📊 [VALIDATE] Confidence: ${winner[1]} votes`);
   } else {
     console.log(`✅ [VALIDATE] Country confirmed: ${userCountry}`);
@@ -132,131 +158,132 @@ function validateAndCorrectCountry(
  */
 function getLocalEcommerce(countryCode: string): string[] {
   const ecommerceByCountry: Record<string, string[]> = {
-    'BR': [
-      'Mercado Livre (mercadolivre.com.br)',
-      'Americanas (americanas.com.br)',
-      'Magazine Luiza (magazineluiza.com.br)',
-      'Amazon Brasil (amazon.com.br)',
-      'Shopee Brasil (shopee.com.br)'
+    BR: [
+      "Mercado Livre (mercadolivre.com.br)",
+      "Americanas (americanas.com.br)",
+      "Magazine Luiza (magazineluiza.com.br)",
+      "Amazon Brasil (amazon.com.br)",
+      "Shopee Brasil (shopee.com.br)",
     ],
-    'US': [
-      'Amazon (amazon.com)',
-      'Walmart (walmart.com)',
-      'Target (target.com)',
-      'eBay (ebay.com)',
-      'Best Buy (bestbuy.com)'
+    US: [
+      "Amazon (amazon.com)",
+      "Walmart (walmart.com)",
+      "Target (target.com)",
+      "eBay (ebay.com)",
+      "Best Buy (bestbuy.com)",
     ],
-    'GB': [
-      'Amazon UK (amazon.co.uk)',
-      'Argos (argos.co.uk)',
-      'Currys (currys.co.uk)',
-      'John Lewis (johnlewis.com)'
+    GB: [
+      "Amazon UK (amazon.co.uk)",
+      "Argos (argos.co.uk)",
+      "Currys (currys.co.uk)",
+      "John Lewis (johnlewis.com)",
     ],
-    'ES': [
-      'Amazon España (amazon.es)',
-      'El Corte Inglés (elcorteingles.es)',
-      'MediaMarkt (mediamarkt.es)',
-      'Carrefour (carrefour.es)'
+    ES: [
+      "Amazon España (amazon.es)",
+      "El Corte Inglés (elcorteingles.es)",
+      "MediaMarkt (mediamarkt.es)",
+      "Carrefour (carrefour.es)",
     ],
-    'MX': [
-      'Mercado Libre (mercadolibre.com.mx)',
-      'Amazon México (amazon.com.mx)',
-      'Liverpool (liverpool.com.mx)',
-      'Coppel (coppel.com)'
+    MX: [
+      "Mercado Libre (mercadolibre.com.mx)",
+      "Amazon México (amazon.com.mx)",
+      "Liverpool (liverpool.com.mx)",
+      "Coppel (coppel.com)",
     ],
-    'AR': [
-      'Mercado Libre (mercadolibre.com.ar)',
-      'Falabella (falabella.com.ar)',
-      'Garbarino (garbarino.com)'
+    AR: [
+      "Mercado Libre (mercadolibre.com.ar)",
+      "Falabella (falabella.com.ar)",
+      "Garbarino (garbarino.com)",
     ],
-    'FR': [
-      'Amazon France (amazon.fr)',
-      'Cdiscount (cdiscount.com)',
-      'Fnac (fnac.com)',
-      'Darty (darty.com)'
+    FR: [
+      "Amazon France (amazon.fr)",
+      "Cdiscount (cdiscount.com)",
+      "Fnac (fnac.com)",
+      "Darty (darty.com)",
     ],
-    'DE': [
-      'Amazon Deutschland (amazon.de)',
-      'MediaMarkt (mediamarkt.de)',
-      'Saturn (saturn.de)',
-      'Otto (otto.de)'
+    DE: [
+      "Amazon Deutschland (amazon.de)",
+      "MediaMarkt (mediamarkt.de)",
+      "Saturn (saturn.de)",
+      "Otto (otto.de)",
     ],
-    'IT': [
-      'Amazon Italia (amazon.it)',
-      'ePRICE (eprice.it)',
-      'Unieuro (unieuro.it)'
+    IT: [
+      "Amazon Italia (amazon.it)",
+      "ePRICE (eprice.it)",
+      "Unieuro (unieuro.it)",
     ],
-    'CA': [
-      'Amazon Canada (amazon.ca)',
-      'Best Buy Canada (bestbuy.ca)',
-      'Walmart Canada (walmart.ca)'
+    CA: [
+      "Amazon Canada (amazon.ca)",
+      "Best Buy Canada (bestbuy.ca)",
+      "Walmart Canada (walmart.ca)",
     ],
-    'AU': [
-      'Amazon Australia (amazon.com.au)',
-      'JB Hi-Fi (jbhifi.com.au)',
-      'Harvey Norman (harveynorman.com.au)'
+    AU: [
+      "Amazon Australia (amazon.com.au)",
+      "JB Hi-Fi (jbhifi.com.au)",
+      "Harvey Norman (harveynorman.com.au)",
     ],
-    'KR': [
-      'Coupang (coupang.com)',
-      'Gmarket (gmarket.co.kr)',
-      '11번가 (11st.co.kr)',
-      'Interpark (interpark.com)'
+    KR: [
+      "Coupang (coupang.com)",
+      "Gmarket (gmarket.co.kr)",
+      "11번가 (11st.co.kr)",
+      "Interpark (interpark.com)",
     ],
-    'JP': [
-      'Rakuten (rakuten.co.jp)',
-      'Amazon Japan (amazon.co.jp)',
-      'Mercari (mercari.com)'
+    JP: [
+      "Rakuten (rakuten.co.jp)",
+      "Amazon Japan (amazon.co.jp)",
+      "Mercari (mercari.com)",
     ],
-    'CN': [
-      'Taobao (taobao.com)',
-      'JD.com (jd.com)',
-      'Tmall (tmall.com)'
+    CN: ["Taobao (taobao.com)", "JD.com (jd.com)", "Tmall (tmall.com)"],
+    IN: [
+      "Amazon India (amazon.in)",
+      "Flipkart (flipkart.com)",
+      "Myntra (myntra.com)",
     ],
-    'IN': [
-      'Amazon India (amazon.in)',
-      'Flipkart (flipkart.com)',
-      'Myntra (myntra.com)'
+    RU: [
+      "Wildberries (wildberries.ru)",
+      "Ozon (ozon.ru)",
+      "Yandex Market (market.yandex.ru)",
     ],
-    'RU': [
-      'Wildberries (wildberries.ru)',
-      'Ozon (ozon.ru)',
-      'Yandex Market (market.yandex.ru)'
-    ]
   };
 
-  return ecommerceByCountry[countryCode] || [
-    `Local ${countryCode} e-commerce sites`,
-    'Amazon',
-    'eBay',
-    'Local retailers'
-  ];
+  return (
+    ecommerceByCountry[countryCode] || [
+      `Local ${countryCode} e-commerce sites`,
+      "Amazon",
+      "eBay",
+      "Local retailers",
+    ]
+  );
 }
 
-const COUNTRY_ECOMMERCE: Record<string, { name: string; domains: string[]; lang: string }> = {
-  'BR': {
-    name: 'Brasil',
-    domains: ['mercadolivre.com.br', 'amazon.com.br', 'magazineluiza.com.br'],
-    lang: 'pt'
+const COUNTRY_ECOMMERCE: Record<
+  string,
+  { name: string; domains: string[]; lang: string }
+> = {
+  BR: {
+    name: "Brasil",
+    domains: ["mercadolivre.com.br", "amazon.com.br", "magazineluiza.com.br"],
+    lang: "pt",
   },
-  'JP': {
-    name: 'Japan',
-    domains: ['rakuten.co.jp', 'amazon.co.jp', 'mercari.com'],
-    lang: 'ja'
+  JP: {
+    name: "Japan",
+    domains: ["rakuten.co.jp", "amazon.co.jp", "mercari.com"],
+    lang: "ja",
   },
-  'KR': {
-    name: 'South Korea',
-    domains: ['coupang.com', 'gmarket.co.kr', '11st.co.kr'],
-    lang: 'ko'
+  KR: {
+    name: "South Korea",
+    domains: ["coupang.com", "gmarket.co.kr", "11st.co.kr"],
+    lang: "ko",
   },
-  'DE': {
-    name: 'Germany',
-    domains: ['amazon.de', 'mediamarkt.de', 'otto.de'],
-    lang: 'de'
+  DE: {
+    name: "Germany",
+    domains: ["amazon.de", "mediamarkt.de", "otto.de"],
+    lang: "de",
   },
-  'US': {
-    name: 'United States',
-    domains: ['amazon.com', 'walmart.com', 'target.com'],
-    lang: 'en'
+  US: {
+    name: "United States",
+    domains: ["amazon.com", "walmart.com", "target.com"],
+    lang: "en",
   },
 };
 
@@ -281,6 +308,7 @@ interface AnalysisRequest {
   product_url?: string;
   pageUrl?: string;
   userCountry?: string;
+  category?: string;
 }
 
 interface SustainabilityIndicator {
@@ -320,7 +348,7 @@ interface CategoryScore {
   score: number;
   matches: string[];
   exclusions: string[];
-  confidence: 'high' | 'medium' | 'low';
+  confidence: "high" | "medium" | "low";
 }
 
 interface ScoringConfig {
@@ -404,20 +432,21 @@ interface AnalysisResponse {
   error?: string;
   _meta?: {
     cached: boolean;
-    cacheSize: number;
+    tokensUsed?: number | string;
+    tokensSaved?: string;
+    cacheSize?: number;
   };
 }
 
 // Cast seguro para o JSON
 const alternativesConfig = alternativesData as unknown as AlternativesConfig;
 
-const VALID_CATEGORIES: Record<string, true> = Object.keys(alternativesConfig.categories).reduce(
-  (map, key) => {
-    map[key] = true;
-    return map;
-  },
-  {} as Record<string, true>
-);
+const VALID_CATEGORIES: Record<string, true> = Object.keys(
+  alternativesConfig.categories
+).reduce((map, key) => {
+  map[key] = true;
+  return map;
+}, {} as Record<string, true>);
 
 // ======= UTILIDADES DE CATEGORIZAÇÃO DINÂMICA =======
 function getTextProcessingConfig(): TextProcessingConfig {
@@ -426,31 +455,33 @@ function getTextProcessingConfig(): TextProcessingConfig {
       remove_accents: true,
       lowercase: true,
       remove_punctuation: true,
-      word_boundary_matching: true
+      word_boundary_matching: true,
     }
   );
 }
 
 function normalizeCategoryText(text: string): string {
   const settings = getTextProcessingConfig();
-  let result = text || '';
+  let result = text || "";
 
   if (settings.lowercase) {
     result = result.toLowerCase();
   }
 
   if (settings.remove_accents) {
-    result = result.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    result = result.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   }
 
   if (settings.remove_punctuation) {
-    result = result.replace(/[^a-z0-9\s]/g, ' ');
+    result = result.replace(/[^a-z0-9\s]/g, " ");
   }
 
-  return result.replace(/\s+/g, ' ').trim();
+  return result.replace(/\s+/g, " ").trim();
 }
 
-function extractGuidelinesFromCriteria(criteria: Record<string, SustainabilityCriterion>): string[] {
+function extractGuidelinesFromCriteria(
+  criteria: Record<string, SustainabilityCriterion>
+): string[] {
   const guidelines: string[] = [];
 
   for (const [, criterionData] of Object.entries(criteria)) {
@@ -463,7 +494,10 @@ function extractGuidelinesFromCriteria(criteria: Record<string, SustainabilityCr
           guidelines.push(indicator.description);
         }
       });
-    } else if (criterionData.guidelines && Array.isArray(criterionData.guidelines)) {
+    } else if (
+      criterionData.guidelines &&
+      Array.isArray(criterionData.guidelines)
+    ) {
       guidelines.push(...criterionData.guidelines);
     }
   }
@@ -473,15 +507,15 @@ function extractGuidelinesFromCriteria(criteria: Record<string, SustainabilityCr
 
 function formatCriteriaForPrompt(categoryData: CategoryData): string {
   const criteria = categoryData.sustainability_criteria || {};
-  let formatted = '';
+  let formatted = "";
 
   for (const [key, data] of Object.entries(criteria)) {
     formatted += `\n${key.toUpperCase()} (weight: ${data.weight}):\n`;
 
     if (data.indicators && Array.isArray(data.indicators)) {
       data.indicators.forEach((indicator, i) => {
-        const indicatorLabel = indicator.name || 'Indicator';
-        const indicatorTarget = indicator.target || indicator.description || '';
+        const indicatorLabel = indicator.name || "Indicator";
+        const indicatorTarget = indicator.target || indicator.description || "";
         formatted += `  ${i + 1}. ${indicatorLabel}: ${indicatorTarget}\n`;
       });
     } else if (data.guidelines && Array.isArray(data.guidelines)) {
@@ -498,35 +532,35 @@ function expandKeywordWithSynonyms(
   keyword: string,
   synonymsMap: Record<string, string[]>
 ): string[] {
-  const normalizedKeyword = (keyword || '').toLowerCase();
+  const normalizedKeyword = (keyword || "").toLowerCase();
   const variants = new Set<string>([normalizedKeyword]);
 
   const synonyms = synonymsMap?.[normalizedKeyword] || [];
-  synonyms.forEach((syn) => variants.add((syn || '').toLowerCase()));
+  synonyms.forEach((syn) => variants.add((syn || "").toLowerCase()));
 
-  if (!normalizedKeyword.endsWith('s')) {
+  if (!normalizedKeyword.endsWith("s")) {
     variants.add(`${normalizedKeyword}s`);
   }
-  variants.add(normalizedKeyword.replace(/s$/, ''));
+  variants.add(normalizedKeyword.replace(/s$/, ""));
 
   return Array.from(variants).filter(Boolean);
 }
 
 function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function countMatches(text: string, keyword: string): number {
   const settings = getTextProcessingConfig();
-  const safeKeyword = escapeRegex((keyword || '').toLowerCase());
+  const safeKeyword = escapeRegex((keyword || "").toLowerCase());
 
   if (settings.word_boundary_matching) {
-    const pattern = new RegExp(`\\b${safeKeyword}\\b`, 'gi');
+    const pattern = new RegExp(`\\b${safeKeyword}\\b`, "gi");
     const matches = text.match(pattern);
     return matches ? matches.length : 0;
   }
 
-  return (text.match(new RegExp(safeKeyword, 'gi')) || []).length;
+  return (text.match(new RegExp(safeKeyword, "gi")) || []).length;
 }
 
 function calculateCategoryScores(sources: ScoringSource[]): CategoryScore[] {
@@ -543,7 +577,10 @@ function calculateCategoryScores(sources: ScoringSource[]): CategoryScore[] {
       const normalizedText = normalizeCategoryText(source.text);
 
       for (const keyword of categoryData.keywords) {
-        const allVariants = expandKeywordWithSynonyms(keyword, categoryData.keyword_synonyms);
+        const allVariants = expandKeywordWithSynonyms(
+          keyword,
+          categoryData.keyword_synonyms
+        );
 
         for (const variant of allVariants) {
           const matchCount = countMatches(normalizedText, variant);
@@ -562,7 +599,7 @@ function calculateCategoryScores(sources: ScoringSource[]): CategoryScore[] {
       score: totalScore,
       matches,
       exclusions: [],
-      confidence: 'medium'
+      confidence: "medium",
     });
   }
 
@@ -576,7 +613,8 @@ function applyExclusionRules(
   const normalizedPrimary = normalizeCategoryText(primaryText);
   const categories = alternativesConfig.categories;
   const penalty =
-    alternativesConfig.scoring_config?.validation_thresholds?.exclusion_penalty ?? -999;
+    alternativesConfig.scoring_config?.validation_thresholds
+      ?.exclusion_penalty ?? -999;
 
   return scores.map((scoreData) => {
     const categoryData = categories[scoreData.category];
@@ -600,7 +638,7 @@ function applyExclusionRules(
       return {
         ...scoreData,
         score: scoreData.score + penalty,
-        exclusions: exclusionsFound
+        exclusions: exclusionsFound,
       };
     }
 
@@ -616,26 +654,34 @@ function selectWinner(scores: CategoryScore[]): CategoryScore | null {
 
   if (!first || first.score < thresholds.minimum_score) {
     console.log(
-      `❌ [CATEGORY] Winner score too low: ${first?.score ?? 0} < ${thresholds.minimum_score}`
+      `❌ [CATEGORY] Winner score too low: ${first?.score ?? 0} < ${
+        thresholds.minimum_score
+      }`
     );
     return null;
   }
 
-  const ratio = second && second.score > 0 ? first.score / second.score : Infinity;
+  const ratio =
+    second && second.score > 0 ? first.score / second.score : Infinity;
 
   if (ratio < thresholds.confidence_ratio) {
-    first.confidence = 'low';
+    first.confidence = "low";
     console.log(
-      `⚠️ [CATEGORY] Low confidence: ratio ${ratio.toFixed(2)} < ${thresholds.confidence_ratio}`
+      `⚠️ [CATEGORY] Low confidence: ratio ${ratio.toFixed(2)} < ${
+        thresholds.confidence_ratio
+      }`
     );
   } else if (ratio >= thresholds.confidence_ratio * 1.5) {
-    first.confidence = 'high';
+    first.confidence = "high";
   } else {
-    first.confidence = 'medium';
+    first.confidence = "medium";
   }
 
   if (first.exclusions.length > 0) {
-    console.log(`❌ [CATEGORY] Exclusions found for ${first.category}:`, first.exclusions);
+    console.log(
+      `❌ [CATEGORY] Exclusions found for ${first.category}:`,
+      first.exclusions
+    );
     return null;
   }
 
@@ -649,16 +695,18 @@ async function classifyWithAI(
 ): Promise<string> {
   const groqApiKey = process.env.GROQ_API_KEY;
   if (!groqApiKey) {
-    throw new Error('Cannot classify: low confidence and no AI available');
+    throw new Error("Cannot classify: low confidence and no AI available");
   }
 
   const categories = alternativesConfig.categories;
   const categoryList = Object.entries(categories)
     .map(
       ([key, data]) =>
-        `- ${key}: ${data.name} (keywords: ${data.keywords.slice(0, 5).join(', ')})`
+        `- ${key}: ${data.name} (keywords: ${data.keywords
+          .slice(0, 5)
+          .join(", ")})`
     )
-    .join('\n');
+    .join("\n");
 
   const prompt = `Classify this product into ONE category:
 
@@ -676,30 +724,33 @@ Category:`;
     const groq = new Groq({ apiKey: groqApiKey });
     const completion = await groq.chat.completions.create({
       messages: [
-        { role: 'system', content: 'Return only the category key, nothing else.' },
-        { role: 'user', content: prompt }
+        {
+          role: "system",
+          content: "Return only the category key, nothing else.",
+        },
+        { role: "user", content: prompt },
       ],
       model: config.groq.defaultModel,
       temperature: config.groq.operations.typeDetection.temperature,
-      max_tokens: config.groq.operations.typeDetection.maxTokens
+      max_tokens: config.groq.operations.typeDetection.maxTokens,
     });
 
     const rawCategory = completion.choices[0]?.message?.content?.trim();
-    let aiCategory = rawCategory ? rawCategory.toLowerCase() : '';
+    let aiCategory = rawCategory ? rawCategory.toLowerCase() : "";
 
     // NORMALIZE COMMON TYPOS
     const typoMap: Record<string, string> = {
-      reuseable_zero_waste: 'reusable_zero_waste',
-      reuseable: 'reusable',
-      sustinable: 'sustainable',
-      sustianable: 'sustainable',
-      reneweable: 'renewable',
-      recylable: 'recyclable',
-      recycleable: 'recyclable',
-      biodegradeable: 'biodegradable',
-      composteable: 'compostable',
-      enviroment: 'environment',
-      enviorment: 'environment'
+      reuseable_zero_waste: "reusable_zero_waste",
+      reuseable: "reusable",
+      sustinable: "sustainable",
+      sustianable: "sustainable",
+      reneweable: "renewable",
+      recylable: "recyclable",
+      recycleable: "recyclable",
+      biodegradeable: "biodegradable",
+      composteable: "compostable",
+      enviroment: "environment",
+      enviorment: "environment",
     };
 
     // Apply typo corrections
@@ -717,12 +768,17 @@ Category:`;
       return aiCategory;
     }
 
-    console.error(`❌ [CATEGORY] Invalid category after normalization: "${aiCategory}"`);
-    console.error(`📋 [CATEGORY] Available categories:`, Object.keys(categories));
+    console.error(
+      `❌ [CATEGORY] Invalid category after normalization: "${aiCategory}"`
+    );
+    console.error(
+      `📋 [CATEGORY] Available categories:`,
+      Object.keys(categories)
+    );
     throw new Error(`AI returned invalid category: ${aiCategory}`);
   } catch (error) {
-    console.error('❌ [CATEGORY] AI classification failed:', error);
-    throw new Error('Could not identify product category');
+    console.error("❌ [CATEGORY] AI classification failed:", error);
+    throw new Error("Could not identify product category");
   }
 }
 
@@ -730,56 +786,53 @@ function logCategorizationResult(
   allScores: CategoryScore[],
   winner: CategoryScore | null
 ): void {
-  console.log('🔍 [CATEGORY] Detailed Analysis:');
-  console.log('━'.repeat(60));
+  console.log("🔍 [CATEGORY] Detailed Analysis:");
+  console.log("━".repeat(60));
 
-  const top3 = [...allScores]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
+  const top3 = [...allScores].sort((a, b) => b.score - a.score).slice(0, 3);
 
   for (const score of top3) {
     console.log(`\n📊 ${score.category}: ${score.score} points`);
     if (score.matches.length > 0) {
-      console.log(`   ✓ Matches: ${score.matches.join(', ')}`);
+      console.log(`   ✓ Matches: ${score.matches.join(", ")}`);
     }
     if (score.exclusions.length > 0) {
-      console.log(`   ✗ Exclusions: ${score.exclusions.join(', ')}`);
+      console.log(`   ✗ Exclusions: ${score.exclusions.join(", ")}`);
     }
   }
 
-  console.log('\n' + '━'.repeat(60));
+  console.log("\n" + "━".repeat(60));
 
   if (winner) {
     console.log(`✅ [CATEGORY] Winner: ${winner.category}`);
     console.log(`   Confidence: ${winner.confidence}`);
     console.log(`   Score: ${winner.score}`);
   } else {
-    console.log('❌ [CATEGORY] No valid winner found');
+    console.log("❌ [CATEGORY] No valid winner found");
   }
 
-  console.log('━'.repeat(60));
+  console.log("━".repeat(60));
 }
 
 // ===== DETECTAR TIPO DE PRODUTO COM IA (CORRIGIDO) =====
 async function detectProductType(
-  productName: string, 
-  pageTitle: string = '',
-  categoryName: string = ''
+  productName: string,
+  pageTitle: string = "",
+  categoryName: string = ""
 ): Promise<string> {
-
   // ✅ CORREÇÃO 3: FALLBACK INTELIGENTE com dicionário dinâmico do JSON
   const categories = alternativesConfig.categories;
 
   // Buscar tipo conhecido no nome do produto
-  const safeProductName = productName || '';
+  const safeProductName = productName || "";
   const lowerName = safeProductName.toLowerCase();
-  const lowerTitle = (pageTitle || '').toLowerCase();
-  
+  const lowerTitle = (pageTitle || "").toLowerCase();
+
   for (const [, data] of Object.entries(categories)) {
     if (data.product_types) {
       for (const type of data.product_types) {
         // Usar regex com word boundaries
-        const pattern = new RegExp(`\\b${type}s?\\b`, 'i');
+        const pattern = new RegExp(`\\b${type}s?\\b`, "i");
         if (pattern.test(lowerName) || pattern.test(lowerTitle)) {
           console.log(`🏷️ Type detected (keyword from json): "${type}"`);
           return type;
@@ -787,20 +840,20 @@ async function detectProductType(
       }
     }
   }
-  
+
   const groqApiKey = process.env.GROQ_API_KEY;
-  
+
   // Se não achou com keywords e não tem API key, usar fallback básico
   if (!groqApiKey) {
-    const words = safeProductName.split(/\s+/).filter(w => w.length > 2);
-    const fallback = words.slice(-2).join(' ');
+    const words = safeProductName.split(/\s+/).filter((w) => w.length > 2);
+    const fallback = words.slice(-2).join(" ");
     console.log(`🏷️ Type (basic fallback): "${fallback}"`);
     return fallback;
   }
 
   try {
     const groq = new Groq({ apiKey: groqApiKey });
-    
+
     const prompt = `Extract the SPECIFIC and DETAILED product type from: "${productName}".
 
 CRITICAL INSTRUCTIONS:
@@ -823,29 +876,31 @@ Return ONLY the specific product type in English, nothing else.`;
 
     const completion = await groq.chat.completions.create({
       messages: [
-        { role: 'system', content: 'Extract product type. Return 1-2 words only.' },
-        { role: 'user', content: prompt }
+        {
+          role: "system",
+          content: "Extract product type. Return 1-2 words only.",
+        },
+        { role: "user", content: prompt },
       ],
       model: config.groq.defaultModel,
       temperature: config.groq.operations.typeDetection.temperature,
-      max_tokens: config.groq.operations.typeDetection.maxTokens
+      max_tokens: config.groq.operations.typeDetection.maxTokens,
     });
 
     const rawType = completion.choices[0]?.message?.content?.trim();
-    const type = rawType ? rawType.toLowerCase() : '';
-    
+    const type = rawType ? rawType.toLowerCase() : "";
+
     if (type && type.length > 0 && type.length < 50) {
       console.log(`🏷️ Type (AI): "${type}"`);
       return type;
     }
 
-    throw new Error('Invalid type from AI');
-
+    throw new Error("Invalid type from AI");
   } catch (error) {
-    console.error('⚠️ Type detection error:', error);
+    console.error("⚠️ Type detection error:", error);
     // Fallback: últimas palavras do nome
-    const words = safeProductName.split(/\s+/).filter(w => w.length > 2);
-    const fallback = words.slice(-2).join(' ');
+    const words = safeProductName.split(/\s+/).filter((w) => w.length > 2);
+    const fallback = words.slice(-2).join(" ");
     console.log(`🏷️ Type (error fallback): "${fallback}"`);
     return fallback;
   }
@@ -856,27 +911,30 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<AnalysisResponse>
 ) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
 
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, error: 'Method not allowed' });
+  if (req.method !== "POST") {
+    return res
+      .status(405)
+      .json({ success: false, error: "Method not allowed" });
   }
 
   try {
     const body = req.body as AnalysisRequest;
-    const rawUserCountry = body.userCountry || body.productInfo?.userCountry || 'US';
-    console.log('🌍 [COUNTRY] Raw user country:', rawUserCountry);
+    const rawUserCountry =
+      body.userCountry || body.productInfo?.userCountry || "US";
+    console.log("🌍 [COUNTRY] Raw user country:", rawUserCountry);
 
     const productInfo: ProductInfo = body.productInfo || {
       productName: body.product_name || body.productName,
       pageUrl: body.product_url || body.pageUrl,
-      userCountry: rawUserCountry
+      userCountry: rawUserCountry,
     };
 
     productInfo.userCountry = productInfo.userCountry || rawUserCountry;
@@ -885,42 +943,46 @@ export default async function handler(
     const userCountry = validateAndCorrectCountry(
       productInfo.userCountry,
       productInfo.pageUrl,
-      productInfo.productName || productInfo.product_name || ''
+      productInfo.productName || productInfo.product_name || ""
     );
 
     productInfo.userCountry = userCountry;
-    console.log('🌍 [COUNTRY] Validated country:', userCountry);
+    console.log("🌍 [COUNTRY] Validated country:", userCountry);
 
     const productName = productInfo.productName || productInfo.product_name;
     if (!productName) {
-      return res.status(400).json({ success: false, error: 'productName is required' });
+      return res
+        .status(400)
+        .json({ success: false, error: "productName is required" });
     }
 
-    console.log('📥 [ANALYZE] Request received:', {
+    console.log("📥 [ANALYZE] Request received:", {
       productName: productName,
       pageUrl: productInfo.pageUrl,
       userCountry: userCountry,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
 
     // ════════════════════════════════════════════════════════════
     // ✅ STEP 1: CHECK CACHE FIRST (ANTES DE QUALQUER GROQ!)
     // ════════════════════════════════════════════════════════════
-    console.log('🔍 [CACHE] Checking cache BEFORE any Groq calls...');
+    console.log("🔍 [CACHE] Checking cache BEFORE any Groq calls...");
 
     const cachedAnalysis = await getCachedAnalysis(productName, userCountry);
 
     if (cachedAnalysis) {
-      console.log('🚀 [CACHE] HIT! Returning cached result (0 tokens, 0 API calls)');
+      console.log(
+        "🚀 [CACHE] HIT! Returning cached result (0 tokens, 0 API calls)"
+      );
 
       // Retorna imediatamente sem chamar Groq
       return res.status(200).json({
         success: true,
         productInfo: {
           productName: productName,
-          pageUrl: productInfo.pageUrl || '',
-          pageTitle: productInfo.pageTitle || '',
-          selectedText: productInfo.selectedText || ''
+          pageUrl: productInfo.pageUrl || "",
+          pageTitle: productInfo.pageTitle || "",
+          selectedText: productInfo.selectedText || "",
         },
         category: cachedAnalysis.originalProduct.category,
         originalProduct: cachedAnalysis.originalProduct,
@@ -929,12 +991,12 @@ export default async function handler(
         _meta: {
           cached: true,
           tokensUsed: 0,
-          tokensSaved: '~2800'
-        }
+          tokensSaved: "~2800",
+        },
       });
     }
 
-    console.log('📭 [CACHE] MISS - Proceeding with full analysis...');
+    console.log("📭 [CACHE] MISS - Proceeding with full analysis...");
 
     // ════════════════════════════════════════════════════════════
     // STEP 2: IDENTIFICAR CATEGORIA (com validação do frontend)
@@ -943,81 +1005,100 @@ export default async function handler(
     let category: string;
 
     if (categoryFromFrontend) {
-      console.log('📥 [BACKEND] Category from frontend:', categoryFromFrontend);
+      console.log("📥 [BACKEND] Category from frontend:", categoryFromFrontend);
 
       const availableCategories = Object.keys(alternativesConfig.categories);
 
       if (availableCategories.includes(categoryFromFrontend)) {
-        console.log('✅ [BACKEND] Frontend category is valid:', categoryFromFrontend);
-        console.log('🔍 [BACKEND] Validating if category matches product...');
+        console.log(
+          "✅ [BACKEND] Frontend category is valid:",
+          categoryFromFrontend
+        );
+        console.log("🔍 [BACKEND] Validating if category matches product...");
 
         const productLower = productName.toLowerCase();
-        const categoryData = alternativesConfig.categories[categoryFromFrontend];
+        const categoryData =
+          alternativesConfig.categories[categoryFromFrontend];
 
         // Verificar se alguma keyword da categoria aparece no nome do produto
-        const hasKeywordMatch = categoryData.keywords.some((keyword: string) => 
+        const hasKeywordMatch = categoryData.keywords.some((keyword: string) =>
           productLower.includes(keyword.toLowerCase())
         );
 
         // Verificar se alguma exclusion_keyword aparece (indica categoria errada)
-        const exclusionKeywords = (categoryData as any).exclusion_keywords || [];
+        const exclusionKeywords =
+          (categoryData as any).exclusion_keywords || [];
         const hasExclusionMatch = exclusionKeywords.some((keyword: string) =>
           productLower.includes(keyword.toLowerCase())
         );
 
         if (hasKeywordMatch && !hasExclusionMatch) {
-          console.log('✅ [BACKEND] Category validated, using frontend category:', categoryFromFrontend);
+          console.log(
+            "✅ [BACKEND] Category validated, using frontend category:",
+            categoryFromFrontend
+          );
           category = categoryFromFrontend;
         } else {
-          console.warn('⚠️ [BACKEND] Category does NOT match product, ignoring frontend category');
-          console.warn('⚠️ [BACKEND] Product:', productName.substring(0, 50));
-          console.warn('⚠️ [BACKEND] Frontend sent:', categoryFromFrontend);
-          console.warn('⚠️ [BACKEND] Will use heuristic instead');
+          console.warn(
+            "⚠️ [BACKEND] Category does NOT match product, ignoring frontend category"
+          );
+          console.warn("⚠️ [BACKEND] Product:", productName.substring(0, 50));
+          console.warn("⚠️ [BACKEND] Frontend sent:", categoryFromFrontend);
+          console.warn("⚠️ [BACKEND] Will use heuristic instead");
 
           // Usar heurística
           category = await identifyCategory(productInfo);
-          console.log('✅ [BACKEND] Heuristic category:', category);
+          console.log("✅ [BACKEND] Heuristic category:", category);
         }
       } else {
-        console.warn('⚠️ [BACKEND] Frontend sent invalid category:', categoryFromFrontend);
+        console.warn(
+          "⚠️ [BACKEND] Frontend sent invalid category:",
+          categoryFromFrontend
+        );
         category = await identifyCategory(productInfo);
-        console.log('✅ [BACKEND] Heuristic category:', category);
+        console.log("✅ [BACKEND] Heuristic category:", category);
       }
     } else {
       // Categoria não enviada pelo frontend
       category = await identifyCategory(productInfo);
     }
 
-    console.log('📂 [CATEGORY] Final category:', category);
+    console.log("📂 [CATEGORY] Final category:", category);
 
-    console.log('📊 [CRITERIA] Structure:', {
-      hasIndicators: !!alternativesConfig.categories[category]?.sustainability_criteria?.durability?.indicators,
-      hasGuidelines: !!alternativesConfig.categories[category]?.sustainability_criteria?.durability?.guidelines,
-      version: alternativesConfig.version
+    console.log("📊 [CRITERIA] Structure:", {
+      hasIndicators:
+        !!alternativesConfig.categories[category]?.sustainability_criteria
+          ?.durability?.indicators,
+      hasGuidelines:
+        !!alternativesConfig.categories[category]?.sustainability_criteria
+          ?.durability?.guidelines,
+      version: alternativesConfig.version,
     });
 
     const categories = alternativesConfig.categories;
     const categoryData = categories[category];
 
     if (!categoryData) {
-      return res.status(400).json({ success: false, error: `Category not found: ${category}` });
+      return res
+        .status(400)
+        .json({ success: false, error: `Category not found: ${category}` });
     }
 
     // ════════════════════════════════════════════════════════════
     // STEP 3: TRADUZIR E DETECTAR TIPO (só executa se cache miss)
     // ════════════════════════════════════════════════════════════
-    console.log('🔍 [SEARCH] Searching sustainable alternatives...');
+    console.log("🔍 [SEARCH] Searching sustainable alternatives...");
 
     const translatedName = await translateProductName(productName);
     const productType = await detectProductType(
       translatedName,
-      productInfo.pageTitle || '',
+      productInfo.pageTitle || "",
       categoryData.name
     );
 
-    console.log('🏷️ [TYPE] Detected:', {
+    console.log("🏷️ [TYPE] Detected:", {
       productType: productType,
-      translatedName: translatedName
+      translatedName: translatedName,
     });
 
     // ════════════════════════════════════════════════════════════
@@ -1036,7 +1117,7 @@ export default async function handler(
     // ════════════════════════════════════════════════════════════
     // STEP 5: ANALISAR COM GROQ (só executa se cache miss)
     // ════════════════════════════════════════════════════════════
-    console.log('📡 [GROQ] Analyzing product...');
+    console.log("📡 [GROQ] Analyzing product...");
 
     const analysis = await analyzeWithGroq(
       productInfo,
@@ -1049,14 +1130,14 @@ export default async function handler(
     );
 
     if (!analysis) {
-      throw new Error('Failed to generate analysis');
+      throw new Error("Failed to generate analysis");
     }
 
     // ════════════════════════════════════════════════════════════
     // STEP 6: SALVAR NO CACHE
     // ════════════════════════════════════════════════════════════
     await setCachedAnalysis(productName, userCountry, analysis);
-    console.log('💾 [CACHE] Analysis saved to cache');
+    console.log("💾 [CACHE] Analysis saved to cache");
 
     // ════════════════════════════════════════════════════════════
     // STEP 7: RETORNAR RESULTADO
@@ -1065,9 +1146,9 @@ export default async function handler(
       success: true,
       productInfo: {
         productName: productName,
-        pageUrl: productInfo.pageUrl || '',
-        pageTitle: productInfo.pageTitle || '',
-        selectedText: productInfo.selectedText || ''
+        pageUrl: productInfo.pageUrl || "",
+        pageTitle: productInfo.pageTitle || "",
+        selectedText: productInfo.selectedText || "",
       },
       category: category,
       originalProduct: analysis.originalProduct,
@@ -1075,25 +1156,24 @@ export default async function handler(
       timestamp: new Date().toISOString(),
       _meta: {
         cached: false,
-        tokensUsed: '~2800'
-      }
+        tokensUsed: "~2800",
+      },
     };
 
-    console.log('📤 [ANALYZE] Response sent:', {
+    console.log("📤 [ANALYZE] Response sent:", {
       success: true,
       category: category,
       alternativesCount: analysis.alternatives.length,
-      timestamp: response.timestamp
+      timestamp: response.timestamp,
     });
 
     return res.status(200).json(response);
-
   } catch (error) {
-    console.error('❌ [ERROR]:', error);
+    console.error("❌ [ERROR]:", error);
     return res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString()
+      error: error instanceof Error ? error.message : "Unknown error",
+      timestamp: new Date().toISOString(),
     });
   }
 }
@@ -1105,48 +1185,52 @@ async function searchRealProducts(
   categoryData: CategoryData,
   category: string,
   userCountry: string
-): Promise<{ products: Array<{title: string, url: string, snippet: string}>; validUrls: string[] }> {
-
-  const country = COUNTRY_ECOMMERCE[userCountry] || COUNTRY_ECOMMERCE['US'];
+): Promise<{
+  products: Array<{ title: string; url: string; snippet: string }>;
+  validUrls: string[];
+}> {
+  const country = COUNTRY_ECOMMERCE[userCountry] || COUNTRY_ECOMMERCE["US"];
 
   // Query otimizada com site: operator
-  const query = `sustainable eco-friendly ${productType} ${country.name} (${country.domains.map(d => 'site:' + d).join(' OR ')})`;
+  const query = `sustainable eco-friendly ${productType} ${
+    country.name
+  } (${country.domains.map((d) => "site:" + d).join(" OR ")})`;
 
   console.log(`🔍 [TAVILY] Query: ${query}`);
 
   try {
     let results = await webSearchClient.search(query, {
       maxResults: 50,
-      searchDepth: 'advanced',
-      includeAnswer: false
+      searchDepth: "advanced",
+      includeAnswer: false,
     });
 
     const validUrls = new Set(
-      (results.results || []).map(r => r.url).filter(Boolean)
+      (results.results || []).map((r) => r.url).filter(Boolean)
     );
 
     console.log(`🔍 [TAVILY] Found ${validUrls.size} valid product URLs`);
 
-    console.log('🔍 [TAVILY] Search results:', {
+    console.log("🔍 [TAVILY] Search results:", {
       query,
       resultsCount: results.results?.length || 0,
-      validUrls: Array.from(validUrls).slice(0, 5)
+      validUrls: Array.from(validUrls).slice(0, 5),
     });
 
     // ✅ FALLBACK: Se poucos resultados, simplificar query
     if (!results.success || !results.results || results.results.length < 5) {
-      console.log('⚠️ [SEARCH] Few results, trying broader query...');
+      console.log("⚠️ [SEARCH] Few results, trying broader query...");
       const fallbackQuery = `eco-friendly sustainable ${productType} shop`;
-      console.log('🔎 [SEARCH] Query (broad):', fallbackQuery);
+      console.log("🔎 [SEARCH] Query (broad):", fallbackQuery);
 
       results = await webSearchClient.search(fallbackQuery, {
         maxResults: 50,
-        searchDepth: 'advanced',
-        includeAnswer: false
+        searchDepth: "advanced",
+        includeAnswer: false,
       });
     }
 
-    (results.results || []).forEach(r => {
+    (results.results || []).forEach((r) => {
       if (r?.url) {
         validUrls.add(r.url);
       }
@@ -1159,38 +1243,89 @@ async function searchRealProducts(
     const rawResults = (results.results || []).filter(Boolean);
 
     const ecommerceDomains = [
-      'mercadolivre.com', 'amazon.com', 'amazon.com.br', 'magazineluiza.com',
-      'americanas.com', 'shopee.com', 'shopee.com.br', 'walmart.com',
-      'target.com', 'ebay.com', 'bestbuy.com', 'coppel.com', 'liverpool.com.mx',
-      'aliexpress.com', 'kabum.com', 'submarino.com', 'carrefour', 'allegro',
-      'rakuten', 'falabella', 'leroymerlin', 'decathlon'
+      "mercadolivre.com",
+      "amazon.com",
+      "amazon.com.br",
+      "magazineluiza.com",
+      "americanas.com",
+      "shopee.com",
+      "shopee.com.br",
+      "walmart.com",
+      "target.com",
+      "ebay.com",
+      "bestbuy.com",
+      "coppel.com",
+      "liverpool.com.mx",
+      "aliexpress.com",
+      "kabum.com",
+      "submarino.com",
+      "carrefour",
+      "allegro",
+      "rakuten",
+      "falabella",
+      "leroymerlin",
+      "decathlon",
     ];
 
     const ecommerceUrlSignals = [
-      '/dp/', '/product/', '/products/', '/produto/', '/p/', '/item/', '/listing/',
-      '/buy/', '/shop/', '/loja/', '/store/', '/collections/', '/categoria/', '/category/',
-      '/tenis', '/sapato', '/calcado', '/calçado'
+      "/dp/",
+      "/product/",
+      "/products/",
+      "/produto/",
+      "/p/",
+      "/item/",
+      "/listing/",
+      "/buy/",
+      "/shop/",
+      "/loja/",
+      "/store/",
+      "/collections/",
+      "/categoria/",
+      "/category/",
+      "/tenis",
+      "/sapato",
+      "/calcado",
+      "/calçado",
     ];
 
     const ecommerceTextSignals = [
-      'comprar', 'buy', 'shop', 'loja', 'store', 'carrinho', 'cart', 'frete', 'entrega', 'parcelamento'
+      "comprar",
+      "buy",
+      "shop",
+      "loja",
+      "store",
+      "carrinho",
+      "cart",
+      "frete",
+      "entrega",
+      "parcelamento",
     ];
 
     const sustainKeywords = [
-      'sustain', 'eco', 'organic', 'recycle', 'natural', 'fair trade',
-      'ethical', 'green', 'bamboo', 'recycled'
+      "sustain",
+      "eco",
+      "organic",
+      "recycle",
+      "natural",
+      "fair trade",
+      "ethical",
+      "green",
+      "bamboo",
+      "recycled",
     ];
 
-    const validProducts = rawResults.filter(r => {
-      const url = (r.url || '').toLowerCase();
-      const text = `${r.title || ''} ${r.snippet || ''}`.toLowerCase();
+    const validProducts = rawResults.filter((r) => {
+      const url = (r.url || "").toLowerCase();
+      const text = `${r.title || ""} ${r.snippet || ""}`.toLowerCase();
 
       if (!url) {
-        console.log(`🔍 [FILTER] Rejected: (missing url) - Reason: missing URL`);
+        console.log(
+          `🔍 [FILTER] Rejected: (missing url) - Reason: missing URL`
+        );
         return false;
       }
 
-      let host = '';
+      let host = "";
       try {
         host = new URL(url).host.toLowerCase();
       } catch (_) {
@@ -1199,91 +1334,144 @@ async function searchRealProducts(
       }
 
       const isArticle = [
-        '/blog/', '/article/', '/news/', '/guide/', '/review', '/reviews',
-        'youtube.', 'wikipedia.', '/best-', '/top-'
-      ].some(p => url.includes(p));
+        "/blog/",
+        "/article/",
+        "/news/",
+        "/guide/",
+        "/review",
+        "/reviews",
+        "youtube.",
+        "wikipedia.",
+        "/best-",
+        "/top-",
+      ].some((p) => url.includes(p));
       if (isArticle) {
         console.log(`🔍 [FILTER] Rejected: ${url} - Reason: article/guide`);
         return false;
       }
 
-      const matchesEcommerce = ecommerceDomains.some(domain => host.includes(domain));
-      const hasUrlSignal = ecommerceUrlSignals.some(p => url.includes(p)) ||
-        url.includes('?srsltid=') || /\/[\w-]+-\d+/.test(url);
+      const matchesEcommerce = ecommerceDomains.some((domain) =>
+        host.includes(domain)
+      );
+      const hasUrlSignal =
+        ecommerceUrlSignals.some((p) => url.includes(p)) ||
+        url.includes("?srsltid=") ||
+        /\/[\w-]+-\d+/.test(url);
       const hasPrice = /(r\$|\$|€|£)/.test(text);
-      const hasPurchaseKeywords = ecommerceTextSignals.some(keyword => text.includes(keyword));
+      const hasPurchaseKeywords = ecommerceTextSignals.some((keyword) =>
+        text.includes(keyword)
+      );
       const hasSizeInfo = /\b(p|m|g|gg|\d{2})\b/.test(text);
-      const isSustainable = sustainKeywords.some(kw => text.includes(kw)) ||
-        categoryData.certifications.some(cert => {
-          const certText = (cert || '').toLowerCase();
+      const isSustainable =
+        sustainKeywords.some((kw) => text.includes(kw)) ||
+        categoryData.certifications.some((cert) => {
+          const certText = (cert || "").toLowerCase();
           return certText && text.includes(certText);
         });
 
-      const isEcommerceLike = matchesEcommerce || hasUrlSignal || hasPrice || hasPurchaseKeywords || hasSizeInfo;
+      const isEcommerceLike =
+        matchesEcommerce ||
+        hasUrlSignal ||
+        hasPrice ||
+        hasPurchaseKeywords ||
+        hasSizeInfo;
 
       if (!isEcommerceLike) {
-        console.log(`🔍 [FILTER] Rejected: ${url} - Reason: not an e-commerce product page`);
+        console.log(
+          `🔍 [FILTER] Rejected: ${url} - Reason: not an e-commerce product page`
+        );
         return false;
       }
 
       if (!isSustainable) {
-        console.log(`🔍 [FILTER] Rejected: ${url} - Reason: lacks sustainability keywords`);
+        console.log(
+          `🔍 [FILTER] Rejected: ${url} - Reason: lacks sustainability keywords`
+        );
         return false;
       }
 
       return true;
     });
 
-    console.log(`✅ [SEARCH] Filtered: ${validProducts.length}/${results.results.length}`);
+    console.log(
+      `✅ [SEARCH] Filtered: ${validProducts.length}/${results.results.length}`
+    );
 
-    let unique = Array.from(new Map(validProducts.map(p => [p.url, p])).values());
+    let unique = Array.from(
+      new Map(validProducts.map((p) => [p.url, p])).values()
+    );
 
     // Fallback permissivo: se nada passou, pegar até 5 e-commerces usando sinais gerais sem exigir sustentabilidade
     if (unique.length === 0) {
-      console.log('⚠️ [SEARCH] No sustainable matches, applying ecommerce-only fallback');
-      const ecommerceOnly = rawResults.filter(r => {
-        const url = (r.url || '').toLowerCase();
+      console.log(
+        "⚠️ [SEARCH] No sustainable matches, applying ecommerce-only fallback"
+      );
+      const ecommerceOnly = rawResults.filter((r) => {
+        const url = (r.url || "").toLowerCase();
         if (!url) return false;
 
         try {
           const host = new URL(url).host.toLowerCase();
           const isArticle = [
-            '/blog/', '/article/', '/news/', '/guide/', '/review', '/reviews',
-            'youtube.', 'wikipedia.', '/best-', '/top-'
-          ].some(p => url.includes(p));
+            "/blog/",
+            "/article/",
+            "/news/",
+            "/guide/",
+            "/review",
+            "/reviews",
+            "youtube.",
+            "wikipedia.",
+            "/best-",
+            "/top-",
+          ].some((p) => url.includes(p));
           if (isArticle) return false;
 
-          const hasUrlSignal = ecommerceUrlSignals.some(p => url.includes(p)) ||
-            url.includes('?srsltid=') || /\/[\w-]+-\d+/.test(url);
-          const text = `${r.title || ''} ${r.snippet || ''}`.toLowerCase();
+          const hasUrlSignal =
+            ecommerceUrlSignals.some((p) => url.includes(p)) ||
+            url.includes("?srsltid=") ||
+            /\/[\w-]+-\d+/.test(url);
+          const text = `${r.title || ""} ${r.snippet || ""}`.toLowerCase();
           const hasPrice = /(r\$|\$|€|£)/.test(text);
-          const hasPurchaseKeywords = ecommerceTextSignals.some(keyword => text.includes(keyword));
+          const hasPurchaseKeywords = ecommerceTextSignals.some((keyword) =>
+            text.includes(keyword)
+          );
           const hasSizeInfo = /\b(p|m|g|gg|\d{2})\b/.test(text);
-          const matchesEcommerce = ecommerceDomains.some(domain => host.includes(domain));
+          const matchesEcommerce = ecommerceDomains.some((domain) =>
+            host.includes(domain)
+          );
 
-          return matchesEcommerce || hasUrlSignal || hasPrice || hasPurchaseKeywords || hasSizeInfo;
+          return (
+            matchesEcommerce ||
+            hasUrlSignal ||
+            hasPrice ||
+            hasPurchaseKeywords ||
+            hasSizeInfo
+          );
         } catch (_) {
           return false;
         }
       });
 
-      unique = Array.from(new Map(ecommerceOnly.map(p => [p.url, p])).values()).slice(0, 5);
+      unique = Array.from(
+        new Map(ecommerceOnly.map((p) => [p.url, p])).values()
+      ).slice(0, 5);
     }
 
     const limited = unique.slice(0, 10);
 
-    console.log(`✅ [SEARCH] Returning ${limited.length} products after dedupe/limit`);
+    console.log(
+      `✅ [SEARCH] Returning ${limited.length} products after dedupe/limit`
+    );
 
-    const products = limited.map(r => ({
-      title: r.title || 'Untitled Product',
-      url: r.url || '',
-      snippet: r.snippet || 'No description available'
+    const products = limited.map((r) => ({
+      title: r.title || "Untitled Product",
+      url: r.url || "",
+      snippet: r.snippet || "No description available",
     }));
 
     return { products, validUrls: Array.from(validUrls) };
-
   } catch (error) {
-    console.error('❌ [SEARCH] Error:', error);
+    console.error("❌ [SEARCH] Error:", error);
     return { products: [], validUrls: [] };
   }
 }
@@ -1292,8 +1480,8 @@ async function searchRealProducts(
 // ===== TRADUZIR (CORRIGIDO) =====
 async function translateProductName(name: string): Promise<string> {
   if (!name || name.trim().length === 0) {
-    console.log('⚠️ [TRANSLATE] Empty product name provided');
-    return '';
+    console.log("⚠️ [TRANSLATE] Empty product name provided");
+    return "";
   }
   // Se já está em inglês, retornar
   if (/^[a-zA-Z0-9\s\-_]+$/.test(name)) {
@@ -1304,18 +1492,21 @@ async function translateProductName(name: string): Promise<string> {
   const commonTranslations = alternativesConfig.common_translations;
   const basicTranslations: Record<string, string> = commonTranslations || {
     // Fallback caso o JSON falhe
-    'sapato': 'shoe', 'sapatos': 'shoes',
-    'salto': 'heel', 'saltos': 'heels',
-    'tênis': 'sneaker', 'tenis': 'sneaker'
+    sapato: "shoe",
+    sapatos: "shoes",
+    salto: "heel",
+    saltos: "heels",
+    tênis: "sneaker",
+    tenis: "sneaker",
   };
-  
+
   // Tentar tradução básica primeiro
-  const normalizedName = name || '';
+  const normalizedName = name || "";
   const words = normalizedName.toLowerCase().split(/\s+/);
   const basicTranslation = words
-    .map(word => basicTranslations[word] || word)
-    .join(' ');
-  
+    .map((word) => basicTranslations[word] || word)
+    .join(" ");
+
   // Se conseguiu traduzir algo, usar
   if (basicTranslation !== normalizedName.toLowerCase()) {
     console.log(`🌐 [TRANSLATE] Basic: "${name}" → "${basicTranslation}"`);
@@ -1324,7 +1515,7 @@ async function translateProductName(name: string): Promise<string> {
 
   const groqApiKey = process.env.GROQ_API_KEY;
   if (!groqApiKey) {
-    console.log('⚠️ [TRANSLATE] No API key, using basic translation');
+    console.log("⚠️ [TRANSLATE] No API key, using basic translation");
     return basicTranslation;
   }
 
@@ -1332,12 +1523,16 @@ async function translateProductName(name: string): Promise<string> {
     const groq = new Groq({ apiKey: groqApiKey });
     const completion = await groq.chat.completions.create({
       messages: [
-        { role: 'system', content: 'Translate to English. Return ONLY the translation, nothing else.' },
-        { role: 'user', content: name }
+        {
+          role: "system",
+          content:
+            "Translate to English. Return ONLY the translation, nothing else.",
+        },
+        { role: "user", content: name },
       ],
       model: config.groq.defaultModel,
       temperature: config.groq.operations.translation.temperature,
-      max_tokens: config.groq.operations.translation.maxTokens
+      max_tokens: config.groq.operations.translation.maxTokens,
     });
 
     const translation = completion.choices[0]?.message?.content?.trim();
@@ -1345,63 +1540,66 @@ async function translateProductName(name: string): Promise<string> {
       console.log(`🌐 [TRANSLATE] AI: "${name}" → "${translation}"`);
       return translation;
     }
-    
-    console.log('⚠️ [TRANSLATE] AI failed, using basic translation');
+
+    console.log("⚠️ [TRANSLATE] AI failed, using basic translation");
     return basicTranslation;
-    
   } catch (error) {
-    console.error('❌ [TRANSLATE] Error:', error);
+    console.error("❌ [TRANSLATE] Error:", error);
     return basicTranslation;
   }
 }
 
 // ===== IDENTIFICAR CATEGORIA (REFATORADA - CONFIG-DRIVEN) =====
 async function identifyCategory(productInfo: ProductInfo): Promise<string> {
-  const name = productInfo.productName || productInfo.product_name || '';
-  const desc = productInfo.description || '';
-  const title = productInfo.pageTitle || '';
-  const url = productInfo.pageUrl || productInfo.product_url || '';
+  const name = productInfo.productName || productInfo.product_name || "";
+  const desc = productInfo.description || "";
+  const title = productInfo.pageTitle || "";
+  const url = productInfo.pageUrl || productInfo.product_url || "";
 
   // 🔎 Heuristic categorization to distinguish software vs physical supplies
   try {
-    const heuristicCategory = categorizeProduct(
-      name,
-      `${title} ${desc}`
-    );
+    const heuristicCategory = categorizeProduct(name, `${title} ${desc}`);
 
     if (heuristicCategory) {
       if (!VALID_CATEGORIES[heuristicCategory]) {
-        throw new Error(`Internal error: Invalid category "${heuristicCategory}"`);
+        throw new Error(
+          `Internal error: Invalid category "${heuristicCategory}"`
+        );
       }
 
-      console.log('✅ [CATEGORY] Heuristic match:', heuristicCategory);
+      console.log("✅ [CATEGORY] Heuristic match:", heuristicCategory);
       return heuristicCategory;
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : '';
-    if (message.includes('too generic')) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("too generic")) {
       throw error;
     }
-    console.log('ℹ️ [CATEGORY] Heuristic not conclusive:', error);
+    console.log("ℹ️ [CATEGORY] Heuristic not conclusive:", error);
   }
 
   const translated = await translateProductName(name);
   if (!name && !desc && !title && !url) {
-    console.error('❌ [CATEGORY] No product information provided');
+    console.error("❌ [CATEGORY] No product information provided");
     throw new Error(
-      'Product information is required. Please provide at least a product name, description, title, or URL.'
+      "Product information is required. Please provide at least a product name, description, title, or URL."
     );
   }
   const weights = alternativesConfig.scoring_config.source_weights;
 
-  const textSample = [translated, name, title, desc].filter(Boolean).join(' | ');
-  console.log('🔍 [CATEGORY] Text sample:', textSample ? textSample.substring(0, 150) : '(empty)');
+  const textSample = [translated, name, title, desc]
+    .filter(Boolean)
+    .join(" | ");
+  console.log(
+    "🔍 [CATEGORY] Text sample:",
+    textSample ? textSample.substring(0, 150) : "(empty)"
+  );
 
   const sources: ScoringSource[] = [
     { text: translated, weight: weights.product_name_translated },
     { text: name, weight: weights.product_name_original },
     { text: title, weight: weights.page_title },
-    { text: desc, weight: weights.description }
+    { text: desc, weight: weights.description },
   ];
 
   const categoryScores = calculateCategoryScores(sources);
@@ -1410,8 +1608,8 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
 
   logCategorizationResult(filteredScores, winner);
 
-  if (!winner || winner.confidence === 'low') {
-    console.log('⚠️ [CATEGORY] Low confidence, using AI fallback');
+  if (!winner || winner.confidence === "low") {
+    console.log("⚠️ [CATEGORY] Low confidence, using AI fallback");
     return await classifyWithAI(name, translated, title);
   }
 
@@ -1419,20 +1617,27 @@ async function identifyCategory(productInfo: ProductInfo): Promise<string> {
 }
 
 function categorizeProduct(productName: string, productType: string): string {
-  const nameLower = (productName || '').toLowerCase();
-  const typeLower = (productType || '').toLowerCase();
+  const nameLower = (productName || "").toLowerCase();
+  const typeLower = (productType || "").toLowerCase();
 
   const isTooShort = productName.trim().length < 3;
   const isJustNumbers = /^\d+$/.test(productName.trim());
-  const isGenericWord = ['product', 'item', 'thing', 'test', 'xyz', 'abc'].includes(
-    nameLower.trim()
-  );
+  const isGenericWord = [
+    "product",
+    "item",
+    "thing",
+    "test",
+    "xyz",
+    "abc",
+  ].includes(nameLower.trim());
 
   if (isTooShort || isJustNumbers || isGenericWord) {
-    throw new Error('Could not identify product category - product name too generic or incomplete');
+    throw new Error(
+      "Could not identify product category - product name too generic or incomplete"
+    );
   }
 
-  throw new Error('Use identifyCategory() instead');
+  throw new Error("Use identifyCategory() instead");
 }
 
 // ===== ANALISAR COM GROQ (CORRIGIDO) =====
@@ -1441,18 +1646,17 @@ async function analyzeWithGroq(
   category: string,
   categoryData: CategoryData,
   productType: string,
-  realProducts: Array<{title: string, url: string, snippet: string}>,
+  realProducts: Array<{ title: string; url: string; snippet: string }>,
   userCountry: string,
   validUrls: string[]
 ): Promise<GroqAnalysisResult> {
-  
   const groqApiKey = process.env.GROQ_API_KEY;
   if (!groqApiKey) {
-    throw new Error('GROQ_API_KEY not configured');
+    throw new Error("GROQ_API_KEY not configured");
   }
 
   const groq = new Groq({ apiKey: groqApiKey });
-  const productName = productInfo.productName || productInfo.product_name || '';
+  const productName = productInfo.productName || productInfo.product_name || "";
 
   const localEcommerce = getLocalEcommerce(userCountry);
 
@@ -1461,20 +1665,26 @@ async function analyzeWithGroq(
 
   // Build products list
   const validProducts = (realProducts || [])
-    .filter((p) => p && typeof p === 'object' && p.title && p.url)
+    .filter((p) => p && typeof p === "object" && p.title && p.url)
     .map((p) => ({
-      title: p.title || 'Untitled',
-      url: p.url || 'N/A',
-      snippet: p.snippet || 'No description available'
+      title: p.title || "Untitled",
+      url: p.url || "N/A",
+      snippet: p.snippet || "No description available",
     }));
 
-  const productsText = validProducts.length > 0
-    ? `\n\nREAL PRODUCTS FOUND (${validProducts.length} total):\n${
-        validProducts.map((p, i) =>
-          `${i + 1}. ${p.title}\n   URL: ${p.url}\n   ${(p.snippet || 'No description available').substring(0, 100)}...\n`
-        ).join('\n')
-      }`
-    : '\n\nNO PRODUCTS FOUND - Suggest well-known sustainable brands in the user\'s country.';
+  const productsText =
+    validProducts.length > 0
+      ? `\n\nREAL PRODUCTS FOUND (${
+          validProducts.length
+        } total):\n${validProducts
+          .map(
+            (p, i) =>
+              `${i + 1}. ${p.title}\n   URL: ${p.url}\n   ${(
+                p.snippet || "No description available"
+              ).substring(0, 100)}...\n`
+          )
+          .join("\n")}`
+      : "\n\nNO PRODUCTS FOUND - Suggest well-known sustainable brands in the user's country.";
 
   const prompt = `You are a sustainability expert analyzing products for users worldwide.
 
@@ -1483,7 +1693,7 @@ USER CONTEXT:
 ═══════════════════════════════════════════════════════════════
 - User Country: ${userCountry}
 - Product Name: ${productName}
-- Local E-commerce Sites: ${localEcommerce.slice(0, 5).join(', ')}
+- Local E-commerce Sites: ${localEcommerce.slice(0, 5).join(", ")}
 
 ═══════════════════════════════════════════════════════════════
 DYNAMIC LOCALIZATION (CRITICAL):
@@ -1500,7 +1710,9 @@ DYNAMIC LOCALIZATION (CRITICAL):
 
 2. E-COMMERCE SITES:
    - User is in ${userCountry}
-   - Suggest products available in these local sites: ${localEcommerce.join(', ')}
+   - Suggest products available in these local sites: ${localEcommerce.join(
+     ", "
+   )}
    - Provide realistic product URLs from local e-commerce
 
 3. CERTIFICATIONS:
@@ -1583,12 +1795,12 @@ Now analyze this product:
 Product: ${productName}
 Category: ${categoryData.name}
 Country: ${userCountry}
-URL: ${productInfo.pageUrl || 'N/A'}
+URL: ${productInfo.pageUrl || "N/A"}
 
 SUSTAINABILITY CRITERIA FOR THIS CATEGORY:
 ${criteriaText}
 
-RELEVANT CERTIFICATIONS: ${categoryData.certifications.join(', ')}
+RELEVANT CERTIFICATIONS: ${categoryData.certifications.join(", ")}
 ${productsText}
 
 ═══════════════════════════════════════════════════════════════
@@ -1639,7 +1851,9 @@ REQUIRED JSON RESPONSE FORMAT:
       "description": "<clear description in detected language>",
       "benefits": "<why more sustainable, in detected language>",
       "sustainability_score": <number 70-100>,
-      "where_to_buy": "<prefer: ${localEcommerce[0]}, ${localEcommerce[1]}, or ${localEcommerce[2]}>",
+      "where_to_buy": "<prefer: ${localEcommerce[0]}, ${
+    localEcommerce[1]
+  }, or ${localEcommerce[2]}>",
       "certifications": ["<relevant certifications>"],
       "product_url": "<URL from local e-commerce if available, else null>"
     }
@@ -1660,36 +1874,43 @@ Begin analysis now.`;
   try {
     const completion = await groq.chat.completions.create({
       messages: [
-        { role: 'system', content: 'Return valid JSON only. Use real products. Match product types strictly.' },
-        { role: 'user', content: prompt }
+        {
+          role: "system",
+          content:
+            "Return valid JSON only. Use real products. Match product types strictly.",
+        },
+        { role: "user", content: prompt },
       ],
       model: config.groq.defaultModel,
       temperature: config.groq.operations.analysis.temperature,
       max_tokens: config.groq.operations.analysis.maxTokens,
-      response_format: { type: 'json_object' }
+      response_format: { type: "json_object" },
     });
 
     const content = completion.choices[0]?.message?.content;
-    if (!content) throw new Error('No response from Groq');
+    if (!content) throw new Error("No response from Groq");
 
     const result = JSON.parse(content) as GroqAnalysisResult;
 
-    console.log('🤖 [GROQ] Alternatives received:', {
+    console.log("🤖 [GROQ] Alternatives received:", {
       count: result.alternatives?.length || 0,
-      withUrls: (result.alternatives || []).filter(a => a.product_url).length
+      withUrls: (result.alternatives || []).filter((a) => a.product_url).length,
     });
 
     const validatedAlternatives = (result.alternatives || [])
-      .map(alt => {
-        if (alt?.product_url) {
-          const urlExists = validUrls.some(validUrl =>
-            validUrl === alt.product_url ||
-            validUrl.includes(alt.product_url) ||
-            alt.product_url.includes(validUrl)
+      .map((alt) => {
+        if (alt?.product_url && typeof alt.product_url === "string") {
+          // ✅ ADICIONADO TYPE CHECK
+          const urlExists = validUrls.some(
+            (validUrl) =>
+              validUrl === alt.product_url ||
+              (alt.product_url && validUrl.includes(alt.product_url)) || // ✅ NULL CHECK
+              (alt.product_url && alt.product_url.includes(validUrl)) // ✅ NULL CHECK
           );
-
           if (!urlExists) {
-            console.log(`⚠️ [VALIDATION] URL inventada removida: ${alt.product_url}`);
+            console.log(
+              `⚠️ [VALIDATION] URL inventada removida: ${alt.product_url}`
+            );
             alt.product_url = null;
           } else {
             console.log(`✅ [VALIDATION] URL válida: ${alt.product_url}`);
@@ -1698,19 +1919,21 @@ Begin analysis now.`;
 
         return alt;
       })
-      .filter(alt => alt && alt.product_url !== null)
-      .filter(alt => {
+      .filter((alt) => alt && alt.product_url !== null)
+      .filter((alt) => {
         if (!alt || !alt.name) {
           return false;
         }
 
-        const altName = (alt.name || '').toLowerCase();
+        const altName = (alt.name || "").toLowerCase();
 
         if (/\b(book|guide|article|manual|course|tutorial)\b/.test(altName)) {
           return false;
         }
 
-        if (alt.sustainability_score < config.sustainability.minAlternativeScore) {
+        if (
+          alt.sustainability_score < config.sustainability.minAlternativeScore
+        ) {
           return false;
         }
 
@@ -1718,10 +1941,13 @@ Begin analysis now.`;
       });
 
     if (validatedAlternatives.length === 0) {
-      const countryContext = COUNTRY_ECOMMERCE[userCountry] || COUNTRY_ECOMMERCE['US'];
-      const productTypeFallback = productType || 'product';
+      const countryContext =
+        COUNTRY_ECOMMERCE[userCountry] || COUNTRY_ECOMMERCE["US"];
+      const productTypeFallback = productType || "product";
       const googleQueryText = `sustainable eco-friendly ${productTypeFallback} buy ${countryContext.name}`;
-      const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQueryText)}`;
+      const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(
+        googleQueryText
+      )}`;
 
       validatedAlternatives.push({
         name: `Search sustainable alternatives on Google`,
@@ -1730,7 +1956,7 @@ Begin analysis now.`;
         sustainability_score: 0,
         where_to_buy: `Google Search`,
         certifications: [],
-        product_url: googleSearchUrl
+        product_url: googleSearchUrl,
       });
 
       console.log(`🔍 [FALLBACK] Added Google search link`);
@@ -1738,15 +1964,14 @@ Begin analysis now.`;
 
     result.alternatives = validatedAlternatives;
 
-    console.log('✅ [FINAL] Validated alternatives:', {
+    console.log("✅ [FINAL] Validated alternatives:", {
       count: validatedAlternatives.length,
-      urls: validatedAlternatives.map(a => a.product_url)
+      urls: validatedAlternatives.map((a) => a.product_url),
     });
 
     return result;
-
   } catch (error) {
-    console.error('❌ [GROQ] Error:', error);
+    console.error("❌ [GROQ] Error:", error);
     throw error;
   }
 }
