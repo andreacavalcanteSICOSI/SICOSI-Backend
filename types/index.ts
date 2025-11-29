@@ -74,9 +74,40 @@ export interface ProductInfo {
 
 // ===== TIPOS CORRIGIDOS PARA alternatives.json =====
 
+export interface EvaluationThreshold {
+  /** Target threshold and description for each performance level. */
+  threshold: number;
+  description: string;
+}
+
+export interface EvaluationCriteria {
+  excellent: EvaluationThreshold;
+  good: EvaluationThreshold;
+  acceptable: EvaluationThreshold;
+  poor: EvaluationThreshold;
+}
+
+export interface Indicator {
+  /** Unique identifier for the indicator. */
+  id: string;
+  /** Human-readable name of the indicator. */
+  name: string;
+  /** Detailed description of what the indicator measures. */
+  description: string;
+  /** Optional measurement guidance for the indicator. */
+  measurement?: string;
+  /** Optional target or threshold description. */
+  target?: string;
+  /** Sources that can be used to validate the indicator. */
+  data_sources?: string[];
+  /** Structured evaluation criteria when available. */
+  evaluation_criteria?: EvaluationCriteria;
+  [key: string]: unknown;
+}
+
 export interface CriterionConfig {
   weight: number;
-  guidelines: string[];
+  indicators: Indicator[];
 }
 
 export interface CategoryConfig {
@@ -89,7 +120,7 @@ export interface CategoryConfig {
   keyword_synonyms?: Record<string, string[]>;
   exclusion_keywords?: string[];
   product_types?: string[];
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export type CategoryData = CategoryConfig;
@@ -104,15 +135,29 @@ export interface ScoringConfig {
 }
 
 export interface EvaluationMethodology {
-  scoring: Record<string, string>;
+  description?: string;
+  scoring?: Record<string, string>;
+  steps?: string[];
+  llm_prompt_template?: string;
+  [key: string]: unknown;
 }
 
 export interface AlternativesConfig {
   version: string;
+  description?: string;
+  lastUpdated?: string;
+  source?: string;
   categories: Record<string, CategoryConfig>;
-  scoring_config: ScoringConfig;
-  evaluation_methodology: EvaluationMethodology;
-  [key: string]: any;
+  scoring_config?: ScoringConfig;
+  evaluation_methodology?: EvaluationMethodology;
+  metadata?: Record<string, unknown>;
+  general_sustainability_principles?: Record<string, string[]>;
+  brazilian_certifications?: Record<string, string>;
+  common_translations?: Record<string, string>;
+  incompatible_types?: Record<string, string[]>;
+  text_processing?: Record<string, unknown>;
+  'Web Search_config'?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 export interface CriterionEvaluation {
@@ -121,7 +166,7 @@ export interface CriterionEvaluation {
 }
 
 export interface ProductFacts {
-  [criterionName: string]: CriterionEvaluation;
+  [criterionName: string]: CriterionEvaluation | string[] | string | undefined;
   certifications?: string[];
   origin?: string;
 }
