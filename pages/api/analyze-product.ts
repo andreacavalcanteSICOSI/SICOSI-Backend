@@ -49,14 +49,21 @@ function getCacheKey(productName: string, userCountry: string, categoryKey: stri
   return `sicosi:${normalized}:${normalizedCategory}:${userCountry}`;
 }
 
-async function getCachedAnalysis(productName: string, userCountry: string, categoryKey: string) {
+async function getCachedAnalysis(
+  productName: string,
+  userCountry: string,
+  categoryKey: string,
+  userLanguage: string,
+  groqClient: Groq,
+) {
   try {
     const key = getCacheKey(productName, userCountry, categoryKey);
     const cached = await redis.get<any>(key);
 
     if (cached) {
       console.log(`✅ [CACHE] Redis HIT: ${key.substring(0, 50)}`);
-      return cached;
+      const translations = await generateTranslations(userLanguage || 'en', groqClient);
+      return { ...cached, translations };
     }
 
     console.log(`📭 [CACHE] Redis MISS: ${key.substring(0, 50)}`);
@@ -64,6 +71,95 @@ async function getCachedAnalysis(productName: string, userCountry: string, categ
   } catch (error) {
     console.error('❌ [CACHE] Redis error:', error);
     return null;
+  }
+}
+
+async function generateTranslations(
+  language: string,
+  groqClient: Groq,
+): Promise<Record<string, string>> {
+  const prompt = `You are a translation assistant. Translate the following UI labels to ${language}.
+
+LABELS TO TRANSLATE:
+- alternatives
+- viewProduct
+- searchGoogle
+- buyAnyway
+- toast (congratulations message for sustainable product)
+- close
+- sustainabilityScoreTitle
+- strengthsTitle
+- weaknessesTitle
+- recommendationsTitle
+- benefitsLabel
+- certificationsLabel
+- whereToBuyLabel
+- noAlternatives
+- noSummary
+- alternativeFallback
+- purchaseAllowed
+- offlineAnalysisWarning
+
+REQUIRED JSON RESPONSE FORMAT:
+{
+  "alternatives": "translated text",
+  "viewProduct": "translated text",
+  "searchGoogle": "translated text",
+  "buyAnyway": "translated text",
+  "toast": "🎉 translated congratulations message",
+  "close": "translated text",
+  "sustainabilityScoreTitle": "translated text",
+  "strengthsTitle": "translated text",
+  "weaknessesTitle": "translated text",
+  "recommendationsTitle": "translated text",
+  "benefitsLabel": "translated text",
+  "certificationsLabel": "translated text",
+  "whereToBuyLabel": "translated text",
+  "noAlternatives": "translated text",
+  "noSummary": "translated text",
+  "alternativeFallback": "translated text",
+  "purchaseAllowed": "translated text",
+  "offlineAnalysisWarning": "translated text"
+}
+
+IMPORTANT: Return ONLY valid JSON. Use the target language for all translations.`;
+
+  try {
+    const completion = await groqClient.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: 'llama-3.3-70b-versatile',
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
+    });
+
+    const content = completion.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error('Empty response from Groq');
+    }
+
+    return JSON.parse(content);
+  } catch (error) {
+    console.error('❌ [TRANSLATIONS] Error generating translations:', error);
+    return {
+      alternatives: 'Sustainable Alternatives',
+      viewProduct: 'View Product',
+      searchGoogle: 'Search on Google',
+      buyAnyway: 'Buy anyway',
+      toast: '🎉 Congratulations! This product is sustainable!',
+      close: 'Close',
+      sustainabilityScoreTitle: 'Sustainability Score',
+      strengthsTitle: 'Strengths',
+      weaknessesTitle: 'Weaknesses',
+      recommendationsTitle: 'Recommendations',
+      benefitsLabel: 'Benefits:',
+      certificationsLabel: 'Certifications:',
+      whereToBuyLabel: 'Where to buy:',
+      noAlternatives: 'No alternatives available',
+      noSummary: 'Summary not available',
+      alternativeFallback: 'Alternative',
+      purchaseAllowed: 'Purchase allowed',
+      offlineAnalysisWarning: 'Offline analysis - limited data',
+    };
   }
 }
 
@@ -508,7 +604,13 @@ export default async function handler(
       categoryFromFrontend && availableCategories.includes(categoryFromFrontend)
         ? categoryFromFrontend
         : 'auto';
-    const cached = await getCachedAnalysis(productName, userCountry, cacheKeyCategory);
+    const cached = await getCachedAnalysis(
+      productName,
+      userCountry,
+      cacheKeyCategory,
+      userLanguage,
+      groqClient,
+    );
     if (cached) {
       return res.status(200).json({ ...cached, _meta: { cached: true } });
     }
@@ -719,6 +821,8 @@ Return empty array: "alternatives": []
     // ════════════════════════════════════════════════════════════
     const validatedAlternatives = alternatives;
 
+    const translations = await generateTranslations(userLanguage || 'en', groqClient);
+
     const responsePayload = {
       success: true,
       analysis: {
@@ -757,6 +861,7 @@ Return empty array: "alternatives": []
         recommendations: texts.recommendations,
       },
       alternatives: validatedAlternatives,
+      translations,
       _meta: {
         cached: cached || false,
       },
