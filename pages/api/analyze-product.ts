@@ -906,6 +906,25 @@ Return ONLY the specific product type in English, nothing else.`;
   }
 }
 
+// ════════════════════════════════════════════════════════════
+// FUNÇÃO AUXILIAR: Extrai domínios do país dinamicamente
+// ════════════════════════════════════════════════════════════
+function getCountryDomains(userCountry: string): string[] {
+  const countryData = COUNTRY_ECOMMERCE[userCountry] || COUNTRY_ECOMMERCE["US"];
+
+  // Extrai domínios dos e-commerces do país
+  const domains = countryData.domains.map((domain) => {
+    // Remove "www." e pega só o domínio
+    return domain.replace("www.", "").toLowerCase();
+  });
+
+  // Adiciona o nome do país como variação
+  const countryName = countryData.name.toLowerCase();
+  domains.push(countryName);
+
+  return domains;
+}
+
 // ===== HANDLER PRINCIPAL =====
 export default async function handler(
   req: NextApiRequest,
@@ -1260,10 +1279,12 @@ async function searchRealProducts(
         return false;
       }
 
-      // ✅ Verificar se domínio pertence ao país (SEM HARDCODE)
-      const matchesDomain = allowedDomains.some((domain: string) =>
-        host.includes(domain)
-      );
+      // ✅ FILTRO RELAXADO: Aceita domínios do país OU domínios com nome do país
+      const countryName = country.name.toLowerCase();
+      const matchesDomain =
+        allowedDomains.some((domain: string) => host.includes(domain)) ||
+        host.includes(countryName) ||
+        url.includes(countryName);
 
       if (!matchesDomain) {
         console.log(
@@ -1272,23 +1293,33 @@ async function searchRealProducts(
         return false;
       }
 
-      // ✅ Verificar se tem palavras-chave de sustentabilidade (SEM HARDCODE)
-      const isSustainable =
-        sustainKeywords.some((kw) => text.includes(kw)) ||
-        text.includes("sustain") ||
-        text.includes("eco") ||
-        text.includes("organic");
+      // ✅ FILTRO RELAXADO: Remove apenas produtos CLARAMENTE não relacionados
+      const blacklist = [
+        "book",
+        "ebook",
+        "guide",
+        "manual",
+        "course",
+        "tutorial",
+        "article",
+        "pdf",
+      ];
+      const isBlacklisted = blacklist.some((word) => text.includes(word));
 
-      if (!isSustainable) {
+      if (isBlacklisted) {
         console.log(
-          `🔍 [FILTER] Rejected: ${url} - Reason: lacks sustainability keywords`
+          `🔍 [FILTER] Rejected: ${url} - Reason: not a product (${blacklist.find(
+            (w) => text.includes(w)
+          )})`
         );
         return false;
       }
 
+      // ✅ REMOVIDO: Filtro de "sustainability keywords" - deixa o Groq decidir
+      // O Tavily já busca com "sustainable eco-friendly", não precisa filtrar novamente
+
       return true;
     });
-
     console.log(
       `✅ [SEARCH] Filtered: ${validProducts.length}/${results.results.length}`
     );
