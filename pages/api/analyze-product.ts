@@ -232,6 +232,34 @@ function getLocalEcommerce(countryCode: string): string[] {
   ];
 }
 
+const COUNTRY_ECOMMERCE: Record<string, { name: string; domains: string[]; lang: string }> = {
+  'BR': {
+    name: 'Brasil',
+    domains: ['mercadolivre.com.br', 'amazon.com.br', 'magazineluiza.com.br'],
+    lang: 'pt'
+  },
+  'JP': {
+    name: 'Japan',
+    domains: ['rakuten.co.jp', 'amazon.co.jp', 'mercari.com'],
+    lang: 'ja'
+  },
+  'KR': {
+    name: 'South Korea',
+    domains: ['coupang.com', 'gmarket.co.kr', '11st.co.kr'],
+    lang: 'ko'
+  },
+  'DE': {
+    name: 'Germany',
+    domains: ['amazon.de', 'mediamarkt.de', 'otto.de'],
+    lang: 'de'
+  },
+  'US': {
+    name: 'United States',
+    domains: ['amazon.com', 'walmart.com', 'target.com'],
+    lang: 'en'
+  },
+};
+
 // ===== TIPOS =====
 interface ProductInfo {
   productName?: string;
@@ -255,9 +283,19 @@ interface AnalysisRequest {
   userCountry?: string;
 }
 
+interface SustainabilityIndicator {
+  id?: string;
+  name?: string;
+  description?: string;
+  measurement?: string;
+  target?: string;
+  data_sources?: string[];
+}
+
 interface SustainabilityCriterion {
   weight: number;
-  guidelines: string[];
+  guidelines?: string[];
+  indicators?: SustainabilityIndicator[];
 }
 
 interface CategoryData {
@@ -410,6 +448,50 @@ function normalizeCategoryText(text: string): string {
   }
 
   return result.replace(/\s+/g, ' ').trim();
+}
+
+function extractGuidelinesFromCriteria(criteria: Record<string, SustainabilityCriterion>): string[] {
+  const guidelines: string[] = [];
+
+  for (const [, criterionData] of Object.entries(criteria)) {
+    if (criterionData.indicators && Array.isArray(criterionData.indicators)) {
+      criterionData.indicators.forEach((indicator) => {
+        if (indicator.target) {
+          guidelines.push(indicator.target);
+        }
+        if (indicator.description) {
+          guidelines.push(indicator.description);
+        }
+      });
+    } else if (criterionData.guidelines && Array.isArray(criterionData.guidelines)) {
+      guidelines.push(...criterionData.guidelines);
+    }
+  }
+
+  return guidelines;
+}
+
+function formatCriteriaForPrompt(categoryData: CategoryData): string {
+  const criteria = categoryData.sustainability_criteria || {};
+  let formatted = '';
+
+  for (const [key, data] of Object.entries(criteria)) {
+    formatted += `\n${key.toUpperCase()} (weight: ${data.weight}):\n`;
+
+    if (data.indicators && Array.isArray(data.indicators)) {
+      data.indicators.forEach((indicator, i) => {
+        const indicatorLabel = indicator.name || 'Indicator';
+        const indicatorTarget = indicator.target || indicator.description || '';
+        formatted += `  ${i + 1}. ${indicatorLabel}: ${indicatorTarget}\n`;
+      });
+    } else if (data.guidelines && Array.isArray(data.guidelines)) {
+      data.guidelines.forEach((g, i) => {
+        formatted += `  ${i + 1}. ${g}\n`;
+      });
+    }
+  }
+
+  return formatted;
 }
 
 function expandKeywordWithSynonyms(
@@ -908,6 +990,12 @@ export default async function handler(
 
     console.log('📂 [CATEGORY] Final category:', category);
 
+    console.log('📊 [CRITERIA] Structure:', {
+      hasIndicators: !!alternativesConfig.categories[category]?.sustainability_criteria?.durability?.indicators,
+      hasGuidelines: !!alternativesConfig.categories[category]?.sustainability_criteria?.durability?.guidelines,
+      version: alternativesConfig.version
+    });
+
     const categories = alternativesConfig.categories;
     const categoryData = categories[category];
 
@@ -935,7 +1023,7 @@ export default async function handler(
     // ════════════════════════════════════════════════════════════
     // STEP 4: BUSCAR PRODUTOS REAIS (não usa Groq)
     // ════════════════════════════════════════════════════════════
-    const realProducts = await searchRealProducts(
+    const { products: realProducts, validUrls } = await searchRealProducts(
       productName,
       productType,
       categoryData,
@@ -956,7 +1044,8 @@ export default async function handler(
       categoryData,
       productType,
       realProducts,
-      userCountry
+      userCountry,
+      validUrls
     );
 
     if (!analysis) {
@@ -1016,45 +1105,14 @@ async function searchRealProducts(
   categoryData: CategoryData,
   category: string,
   userCountry: string
-): Promise<Array<{title: string, url: string, snippet: string}>> {
+): Promise<{ products: Array<{title: string, url: string, snippet: string}>; validUrls: string[] }> {
 
-  const countryNames: Record<string, string> = {
-    'BR': 'Brazil', 'US': 'United States', 'UK': 'United Kingdom',
-    'CA': 'Canada', 'AU': 'Australia', 'DE': 'Germany',
-    'FR': 'France', 'ES': 'Spain', 'IT': 'Italy'
-  };
+  const country = COUNTRY_ECOMMERCE[userCountry] || COUNTRY_ECOMMERCE['US'];
 
-  // Construir query otimizada via Groq
-  const groqApiKey = process.env.GROQ_API_KEY;
-  const groqPrompt = `Generate a short e-commerce search query (max 6 words) to find sustainable/eco-friendly ${productType} in ${userCountry}. Return ONLY the query in the local language, nothing else.`;
+  // Query otimizada com site: operator
+  const query = `sustainable eco-friendly ${productType} ${country.name} (${country.domains.map(d => 'site:' + d).join(' OR ')})`;
 
-  let query = `sustainable ${productType} eco-friendly ${countryNames[userCountry] || userCountry}`;
-
-  if (groqApiKey) {
-    try {
-      const groq = new Groq({ apiKey: groqApiKey });
-      const completion = await groq.chat.completions.create({
-        messages: [
-          { role: 'system', content: 'You generate concise e-commerce search queries.' },
-          { role: 'user', content: groqPrompt }
-        ],
-        model: config.groq.defaultModel,
-        temperature: 0.2,
-        max_tokens: 30
-      });
-
-      const aiQuery = completion.choices?.[0]?.message?.content?.trim();
-      if (aiQuery) {
-        query = aiQuery;
-      }
-    } catch (error) {
-      console.log('⚠️ [SEARCH] Groq query generation failed, using fallback query', error);
-    }
-  } else {
-    console.log('⚠️ [SEARCH] No GROQ_API_KEY, using fallback query');
-  }
-
-  console.log(`🔍 Web Search Query: ${query}`);
+  console.log(`🔍 [TAVILY] Query: ${query}`);
 
   try {
     let results = await webSearchClient.search(query, {
@@ -1063,21 +1121,39 @@ async function searchRealProducts(
       includeAnswer: false
     });
 
+    const validUrls = new Set(
+      (results.results || []).map(r => r.url).filter(Boolean)
+    );
+
+    console.log(`🔍 [TAVILY] Found ${validUrls.size} valid product URLs`);
+
+    console.log('🔍 [TAVILY] Search results:', {
+      query,
+      resultsCount: results.results?.length || 0,
+      validUrls: Array.from(validUrls).slice(0, 5)
+    });
+
     // ✅ FALLBACK: Se poucos resultados, simplificar query
     if (!results.success || !results.results || results.results.length < 5) {
       console.log('⚠️ [SEARCH] Few results, trying broader query...');
-      query = `eco-friendly sustainable ${productType} shop`;
-      console.log('🔎 [SEARCH] Query (broad):', query);
+      const fallbackQuery = `eco-friendly sustainable ${productType} shop`;
+      console.log('🔎 [SEARCH] Query (broad):', fallbackQuery);
 
-      results = await webSearchClient.search(query, {
+      results = await webSearchClient.search(fallbackQuery, {
         maxResults: 50,
         searchDepth: 'advanced',
         includeAnswer: false
       });
     }
 
+    (results.results || []).forEach(r => {
+      if (r?.url) {
+        validUrls.add(r.url);
+      }
+    });
+
     if (!results.success || !results.results) {
-      return [];
+      return { products: [], validUrls: Array.from(validUrls) };
     }
 
     const rawResults = (results.results || []).filter(Boolean);
@@ -1198,18 +1274,21 @@ async function searchRealProducts(
 
     console.log(`✅ [SEARCH] Returning ${limited.length} products after dedupe/limit`);
 
-    return limited.map(r => ({
+    const products = limited.map(r => ({
       title: r.title || 'Untitled Product',
       url: r.url || '',
       snippet: r.snippet || 'No description available'
     }));
 
+    return { products, validUrls: Array.from(validUrls) };
+
   } catch (error) {
     console.error('❌ [SEARCH] Error:', error);
-    return [];
+    return { products: [], validUrls: [] };
   }
 }
 
+// ===== TRADUZIR (CORRIGIDO) =====
 // ===== TRADUZIR (CORRIGIDO) =====
 async function translateProductName(name: string): Promise<string> {
   if (!name || name.trim().length === 0) {
@@ -1356,27 +1435,6 @@ function categorizeProduct(productName: string, productType: string): string {
   throw new Error('Use identifyCategory() instead');
 }
 
-function validateAlternativeUrls(
-  alternatives: Alternative[] = [],
-  realProducts: Array<{ title: string; url: string; snippet: string }> = []
-): Alternative[] {
-  const realUrls = new Set(
-    realProducts
-      .filter((p) => p && typeof p.url === 'string' && p.url.trim().length > 0)
-      .map((p) => p.url.trim())
-  );
-
-  return alternatives.map((alternative) => {
-    const url = alternative?.product_url?.trim();
-    const isRealUrl = url ? realUrls.has(url) : false;
-
-    return {
-      ...alternative,
-      product_url: isRealUrl ? url! : null
-    };
-  });
-}
-
 // ===== ANALISAR COM GROQ (CORRIGIDO) =====
 async function analyzeWithGroq(
   productInfo: ProductInfo,
@@ -1384,7 +1442,8 @@ async function analyzeWithGroq(
   categoryData: CategoryData,
   productType: string,
   realProducts: Array<{title: string, url: string, snippet: string}>,
-  userCountry: string
+  userCountry: string,
+  validUrls: string[]
 ): Promise<GroqAnalysisResult> {
   
   const groqApiKey = process.env.GROQ_API_KEY;
@@ -1398,9 +1457,7 @@ async function analyzeWithGroq(
   const localEcommerce = getLocalEcommerce(userCountry);
 
   // Build criteria text
-  const criteria = Object.entries(categoryData.sustainability_criteria)
-    .map(([key, val]) => `${key} (weight ${val.weight}): ${val.guidelines.join('; ')}`)
-    .join('\n');
+  const criteriaText = formatCriteriaForPrompt(categoryData);
 
   // Build products list
   const validProducts = (realProducts || [])
@@ -1529,7 +1586,7 @@ Country: ${userCountry}
 URL: ${productInfo.pageUrl || 'N/A'}
 
 SUSTAINABILITY CRITERIA FOR THIS CATEGORY:
-${criteria}
+${criteriaText}
 
 RELEVANT CERTIFICATIONS: ${categoryData.certifications.join(', ')}
 ${productsText}
@@ -1617,13 +1674,32 @@ Begin analysis now.`;
 
     const result = JSON.parse(content) as GroqAnalysisResult;
 
-    const validatedAlternatives = validateAlternativeUrls(
-      result.alternatives || [],
-      validProducts
-    );
+    console.log('🤖 [GROQ] Alternatives received:', {
+      count: result.alternatives?.length || 0,
+      withUrls: (result.alternatives || []).filter(a => a.product_url).length
+    });
 
-    if (validatedAlternatives) {
-      result.alternatives = validatedAlternatives.filter(alt => {
+    const validatedAlternatives = (result.alternatives || [])
+      .map(alt => {
+        if (alt?.product_url) {
+          const urlExists = validUrls.some(validUrl =>
+            validUrl === alt.product_url ||
+            validUrl.includes(alt.product_url) ||
+            alt.product_url.includes(validUrl)
+          );
+
+          if (!urlExists) {
+            console.log(`⚠️ [VALIDATION] URL inventada removida: ${alt.product_url}`);
+            alt.product_url = null;
+          } else {
+            console.log(`✅ [VALIDATION] URL válida: ${alt.product_url}`);
+          }
+        }
+
+        return alt;
+      })
+      .filter(alt => alt && alt.product_url !== null)
+      .filter(alt => {
         if (!alt || !alt.name) {
           return false;
         }
@@ -1640,9 +1716,33 @@ Begin analysis now.`;
 
         return true;
       });
+
+    if (validatedAlternatives.length === 0) {
+      const countryContext = COUNTRY_ECOMMERCE[userCountry] || COUNTRY_ECOMMERCE['US'];
+      const productTypeFallback = productType || 'product';
+      const googleQueryText = `sustainable eco-friendly ${productTypeFallback} buy ${countryContext.name}`;
+      const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQueryText)}`;
+
+      validatedAlternatives.push({
+        name: `Search sustainable alternatives on Google`,
+        description: `We couldn't find specific products, but you can search for sustainable alternatives here`,
+        benefits: `Find sustainable options available in ${countryContext.name}`,
+        sustainability_score: 0,
+        where_to_buy: `Google Search`,
+        certifications: [],
+        product_url: googleSearchUrl
+      });
+
+      console.log(`🔍 [FALLBACK] Added Google search link`);
     }
 
-    console.log(`🌿 [VALIDATION] Final alternatives: ${result.alternatives.length}`);
+    result.alternatives = validatedAlternatives;
+
+    console.log('✅ [FINAL] Validated alternatives:', {
+      count: validatedAlternatives.length,
+      urls: validatedAlternatives.map(a => a.product_url)
+    });
+
     return result;
 
   } catch (error) {

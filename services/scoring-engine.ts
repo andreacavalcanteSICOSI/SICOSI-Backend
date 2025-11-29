@@ -33,6 +33,19 @@ const DEFAULT_WEIGHTS: Record<string, number> = {
   materials: 0.2,
 };
 
+function evaluateCompliance(productFacts: ProductFacts, targets: string[]): number {
+  let matches = 0;
+
+  targets.forEach((target) => {
+    const normalizedTarget = (target || '').toLowerCase();
+    if (normalizedTarget.includes('recycl') && (productFacts as any).recyclable) matches++;
+    if (normalizedTarget.includes('organic') && (productFacts as any).materials?.includes?.('organic')) matches++;
+    if (normalizedTarget.includes('energy') && (productFacts as any).energy_efficient) matches++;
+  });
+
+  return targets.length > 0 ? matches / targets.length : 0;
+}
+
 /**
  * Calcula o score de sustentabilidade de forma DETERMINÍSTICA
  * usando os pesos definidos no alternatives.json
@@ -71,15 +84,33 @@ export function calculateSustainabilityScore(
   // Para cada critério de sustentabilidade
   for (const [criterionName, weight] of Object.entries(weights)) {
     const criterionData = facts[criterionName];
-    const score =
+    const criterionConfig = categoryData?.sustainability_criteria?.[criterionName as keyof typeof criteria] as any;
+
+    const targets: string[] = [];
+    if (criterionConfig?.indicators && Array.isArray(criterionConfig.indicators)) {
+      criterionConfig.indicators.forEach((indicator: any) => {
+        if (indicator.target) {
+          targets.push(String(indicator.target).toLowerCase());
+        }
+      });
+    } else if (criterionConfig?.guidelines && Array.isArray(criterionConfig.guidelines)) {
+      criterionConfig.guidelines.forEach((g: string) => targets.push(g.toLowerCase()));
+    }
+
+    let criterionScore =
       typeof criterionData === 'object' && criterionData !== null && 'score' in criterionData
         ? (criterionData as CriterionEvaluation).score || 0
         : 0;
 
-    const weightedScore = score * weight;
+    if (criterionScore === 0 && targets.length > 0) {
+      const compliance = evaluateCompliance(facts, targets);
+      criterionScore = compliance * 100;
+    }
+
+    const weightedScore = criterionScore * weight;
 
     breakdown[criterionName] = {
-      score: score,
+      score: criterionScore,
       weight: weight,
       weighted: weightedScore,
     };

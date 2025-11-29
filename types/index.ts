@@ -75,9 +75,19 @@ export interface ProductInfo {
 // ===== TIPOS CORRIGIDOS PARA alternatives.json =====
 
 // Critério de sustentabilidade individual
+export interface SustainabilityIndicator {
+  id?: string;
+  name?: string;
+  description?: string;
+  measurement?: string;
+  target?: string;
+  data_sources?: string[];
+}
+
 export interface SustainabilityCriterion {
   weight: number;
-  guidelines: string[];
+  guidelines?: string[];
+  indicators?: SustainabilityIndicator[];
 }
 
 // Objeto com múltiplos critérios
