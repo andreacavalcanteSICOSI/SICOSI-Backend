@@ -6,7 +6,7 @@ interface CriterionEvaluation {
 }
 
 export interface ProductFacts {
-  [criterionName: string]: CriterionEvaluation;
+  [criterionName: string]: CriterionEvaluation | string[] | string | undefined;
   certifications?: string[];
   origin?: string;
 }
@@ -71,7 +71,10 @@ export function calculateSustainabilityScore(
   // Para cada critério de sustentabilidade
   for (const [criterionName, weight] of Object.entries(weights)) {
     const criterionData = facts[criterionName];
-    const score = criterionData?.score || 0;
+    const score =
+      typeof criterionData === 'object' && criterionData !== null && 'score' in criterionData
+        ? (criterionData as CriterionEvaluation).score || 0
+        : 0;
 
     const weightedScore = score * weight;
 

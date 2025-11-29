@@ -1,5 +1,6 @@
 import Groq from 'groq-sdk';
 import alternativesData from '../data/alternatives.json';
+import { Indicator } from '../types';
 import { ProductFacts } from './scoring-engine';
 
 const groq = new Groq({
@@ -19,14 +20,40 @@ export async function extractProductFacts(
   const categoryData = alternativesConfig.categories[category];
   const criteria = categoryData.sustainability_criteria;
 
-  // Construir lista de critérios com guidelines
-  const criteriaList = Object.entries(criteria)
+  if (!criteria || typeof criteria !== 'object') {
+    console.error('[FACT-EXTRACTOR] Missing sustainability_criteria for category:', category);
+  }
+
+  // Construir lista de critérios com indicators
+  const criteriaList = Object.entries(criteria || {})
     .map(([name, config]: [string, any]) => {
+      const indicators = Array.isArray(config?.indicators) ? (config.indicators as Indicator[]) : [];
+
+      if (indicators.length === 0) {
+        console.warn(
+          `[FACT-EXTRACTOR] No indicators found for criterion "${name}". Config received:`,
+          config,
+        );
+      }
+
+      const indicatorsText = indicators
+        .map((indicator: Indicator, index) => {
+          const title = indicator.name || indicator.id || `Indicator ${index + 1}`;
+          const description = indicator.description || 'No description provided.';
+          const evalCriteria = indicator.evaluation_criteria;
+
+          const evaluationText = evalCriteria
+            ? `\nEvaluation criteria:\n- Excellent (${evalCriteria.excellent?.threshold ?? 'n/a'}): ${evalCriteria.excellent?.description ?? 'Not provided'}\n- Good (${evalCriteria.good?.threshold ?? 'n/a'}): ${evalCriteria.good?.description ?? 'Not provided'}\n- Acceptable (${evalCriteria.acceptable?.threshold ?? 'n/a'}): ${evalCriteria.acceptable?.description ?? 'Not provided'}\n- Poor (${evalCriteria.poor?.threshold ?? 'n/a'}): ${evalCriteria.poor?.description ?? 'Not provided'}`
+            : '';
+
+          return `- ${title}: ${description}${evaluationText}`;
+        })
+        .join('\n');
+
       return `
 ### ${name.toUpperCase()}
-Guidelines to evaluate:
-${config.guidelines.map((g: string) => `- ${g}`).join('\n')}
-`;
+Indicators to evaluate:
+${indicatorsText || '- No indicators configured'}`;
     })
     .join('\n');
 
@@ -42,7 +69,7 @@ CRITERIA TO EVALUATE:
 ${criteriaList}
 
 INSTRUCTIONS:
-1. For EACH criterion above, assign a score from 0-100 based on how well the product meets the guidelines
+1. For EACH criterion above, assign a score from 0-100 based on how well the product meets the indicators
 2. Provide evidence from the context that supports your score
 3. If no information is available for a criterion, use score: 0
 4. Be objective and base scores ONLY on evidence found in the context
