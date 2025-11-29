@@ -759,48 +759,43 @@ export default async function handler(
         : altSearchResults.results || [];
 
       if (altResultsForPrompt.length) {
-        const prompt = `You are a sustainable purchasing assistant. Suggest up to 4 alternatives for the product using ONLY the real search results below.
+        const prompt = `You are a sustainable purchasing assistant analyzing a product with sustainability score ${scoreResult.finalScore}/100.
 
-REAL PRODUCTS FOUND:
+REAL PRODUCTS FOUND (from web search):
 ${altResultsForPrompt
   .map(
     (r: any, i: number) => `${i + 1}. ${r.title}\nURL: ${r.url}\nSnippet: ${(r.snippet || '').substring(0, 180)}`,
   )
   .join('\n\n')}
 
-IMPORTANT:
-- Suggest ONLY products that appear in the REAL PRODUCTS FOUND list above
-- Use the exact URLs from the search results
-- If no suitable alternatives found, return empty array
+YOUR TASK:
+The original product scored ${scoreResult.finalScore}/100 (below the 70 threshold).
+You MUST suggest exactly 4 sustainable alternatives from the REAL PRODUCTS FOUND list above.
 
-════════════════════════════════════════════════════════════════
-ALTERNATIVES LOGIC (CRITICAL):
-════════════════════════════════════════════════════════════════
+REQUIREMENTS:
+1. Use ONLY products from the REAL PRODUCTS FOUND list
+2. Use the exact URLs from the search results
+3. Each alternative should have estimated sustainability_score >= 70
+4. Respond in the same language as the product name: "${productName}"
+5. If a product from the list doesn't have a direct URL, set product_url to null
+6. You MUST return exactly 4 alternatives (or as many as available from the list, minimum 1)
 
-Original product sustainability_score: ${scoreResult.finalScore}
-Calculate originalProduct.sustainability_score FIRST
-IF score < 70:
-Product is NOT sustainable
-MUST provide exactly 4 sustainable alternatives
-Each alternative MUST have score >= 70
-Use ONLY URLs from REAL PRODUCTS FOUND list above
-Respond in same language as product name
-IF score >= 70:
-Product IS sustainable
-Return empty array: "alternatives": []
+REQUIRED JSON RESPONSE FORMAT:
+{
+  "alternatives": [
+    {
+      "name": "Product name from search results",
+      "description": "Why this is a sustainable alternative",
+      "benefits": "Key sustainability benefits",
+      "sustainability_score": 75,
+      "where_to_buy": "Store name or region",
+      "certifications": ["cert1", "cert2"],
+      "product_url": "exact URL from search results or null"
+    }
+  ]
+}
 
- REQUIRED JSON RESPONSE FORMAT:
-[
-  {
-    "name": "Product name",
-    "description": "Why this is a sustainable alternative (PT-BR)",
-    "benefits": "Key sustainability benefits (PT-BR)",
-    "sustainability_score": 0,
-    "where_to_buy": "URL",
-    "certifications": ["cert1", "cert2"],
-    "product_url": "URL"
-  }
-]`;
+IMPORTANT: Return a JSON object with "alternatives" array, NOT a plain array.`;
 
         const completion = await groqClient.chat.completions.create({
           messages: [{ role: 'user', content: prompt }],
@@ -809,8 +804,9 @@ Return empty array: "alternatives": []
           response_format: { type: 'json_object' },
         });
 
-        const parsedAlternatives = JSON.parse(completion.choices[0].message.content || '[]');
-        alternatives = Array.isArray(parsedAlternatives) ? parsedAlternatives : [];
+        const parsedAlternatives = JSON.parse(completion.choices[0].message.content || '{}');
+        const parsedArray = (parsedAlternatives as any)?.alternatives;
+        alternatives = Array.isArray(parsedArray) ? parsedArray : [];
       }
 
       console.log(`✅ [ALTERNATIVES] Found ${alternatives.length} alternatives`);
