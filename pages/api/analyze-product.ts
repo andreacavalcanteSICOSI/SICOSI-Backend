@@ -1127,6 +1127,88 @@ function enforceDomainDiversity(alternatives: Alternative[]): Alternative[] {
   return reorderedAlternatives;
 }
 
+/**
+ * Validates that alternatives match the original product's category
+ * Filters out incoherent suggestions (e.g., electronics when original is clothing)
+ * @param {Alternative[]} alternatives - List of alternative products
+ * @param {string} category - Original product category
+ * @param {CategoryData} categoryData - Category configuration
+ * @param {string} productType - Original product type
+ * @returns {Alternative[]} - Filtered list with only coherent alternatives
+ */
+function validateCategoryCoherence(
+  alternatives: Alternative[],
+  category: string,
+  categoryData: CategoryData,
+  productType: string
+): Alternative[] {
+  if (!alternatives || alternatives.length === 0) {
+    return alternatives;
+  }
+
+  console.log(`🔍 [COHERENCE] Validating ${alternatives.length} alternatives for category: ${category}`);
+
+  const categoryKeywords = categoryData.keywords || [];
+  const exclusionKeywords = categoryData.exclusion_keywords || [];
+  
+  // Get keywords from other categories to detect cross-category pollution
+  const otherCategoriesKeywords = new Set<string>();
+  Object.entries(alternativesConfig.categories).forEach(([catKey, catData]) => {
+    if (catKey !== category) {
+      catData.keywords.forEach((kw: string) => otherCategoriesKeywords.add(kw.toLowerCase()));
+    }
+  });
+
+  const coherentAlternatives = alternatives.filter((alt) => {
+    if (!alt || !alt.name) {
+      console.log(`⚠️ [COHERENCE] Removed: No name`);
+      return false;
+    }
+
+    const altName = alt.name.toLowerCase();
+    const altDescription = (alt.description || "").toLowerCase();
+    const combinedText = `${altName} ${altDescription}`;
+
+    // Check if alternative matches category keywords
+    const hasMatchingKeyword = categoryKeywords.some((kw: string) => 
+      combinedText.includes(kw.toLowerCase())
+    );
+
+    // Check if alternative has exclusion keywords (wrong category indicators)
+    const hasExclusionKeyword = exclusionKeywords.some((kw: string) =>
+      combinedText.includes(kw.toLowerCase())
+    );
+
+    // Check if alternative matches keywords from OTHER categories (cross-pollution)
+    const matchesOtherCategory = Array.from(otherCategoriesKeywords).some(kw =>
+      combinedText.includes(kw) && !categoryKeywords.includes(kw)
+    );
+
+    // Decision logic
+    if (hasExclusionKeyword) {
+      console.log(`❌ [COHERENCE] Removed "${alt.name}": Has exclusion keyword`);
+      return false;
+    }
+
+    if (matchesOtherCategory && !hasMatchingKeyword) {
+      console.log(`❌ [COHERENCE] Removed "${alt.name}": Matches different category`);
+      return false;
+    }
+
+    if (!hasMatchingKeyword) {
+      console.log(`⚠️ [COHERENCE] Warning "${alt.name}": No matching keywords, but keeping (might be valid)`);
+    } else {
+      console.log(`✅ [COHERENCE] Valid "${alt.name}": Matches category`);
+    }
+
+    return true;
+  });
+
+  console.log(`📊 [COHERENCE] Kept ${coherentAlternatives.length}/${alternatives.length} coherent alternatives`);
+
+  return coherentAlternatives;
+}
+
 
 
 // ════════════════════════════════════════════════════════════
@@ -1978,26 +2060,36 @@ async function analyzeWithGroq(
       - If a URL is from a different country, DO NOT include it
 
     ═══════════════════════════════════════════════════════════════
-    DOMAIN DIVERSITY REQUIREMENT (MANDATORY):
+    DOMAIN DIVERSITY REQUIREMENT (FLEXIBLE):
     ═══════════════════════════════════════════════════════════════
 
-    1. MAXIMUM 2 PRODUCTS PER DOMAIN:
-      - Extract the domain from each product URL (e.g., amazon.de, mercadolivre.com.br)
-      - You MUST NOT select more than 2 alternatives from the same domain
-      - If you find 3+ good products from one domain, choose only the best 2
+    1. DOMAIN DIVERSITY RULE (FLEXIBLE):
+       - PREFER maximum 2 products from the same domain for diversity
+       - EXCEPTION: If the best prices (lowest prices) are all from the same domain, you MAY suggest up to 4 from that domain
+       - Extract the domain from each URL (e.g., amazon.de, mercadolivre.com.br)
 
     2. PRIORITIZATION ORDER:
-      a) Specialized eco-friendly/sustainable stores (highest priority)
-      b) Different general retailers (medium priority)
-      c) Same domain as other alternatives (lowest priority - max 2)
+       a) **CATEGORY COHERENCE** (ABSOLUTE PRIORITY - Never violate this)
+       b) **BEST PRICES** (If available in search results)
+       c) Specialized eco-friendly/sustainable stores
+       d) Domain diversity (max 2 per domain, unless all best prices are from same domain)
 
     3. DIVERSITY EXAMPLES:
-      ✓ GOOD: 1 from amazon.de + 1 from ebay.de + 1 from avocadostore.de + 1 from waschbaer.de
-      ✓ GOOD: 2 from amazon.de + 1 from otto.de + 1 from mediamarkt.de
-      ✗ BAD: 4 from amazon.de (violates max 2 per domain rule)
-      ✗ BAD: 3 from mercadolivre.com.br + 1 from amazon.com.br (violates max 2 per domain rule)
+       ✓ IDEAL: 1 from amazon.de + 1 from ebay.de + 1 from avocadostore.de + 1 from waschbaer.de
+       ✓ GOOD: 2 from amazon.de + 1 from otto.de + 1 from mediamarkt.de
+       ✓ ACCEPTABLE: 4 from amazon.de (ONLY if they are the 4 best prices AND same category)
+       ✗ BAD: 4 from amazon.de when better prices exist on other domains
+       ✗ TERRIBLE: Suggesting products from different categories (NEVER DO THIS)
 
-    4. FALLBACK BEHAVIOR:
+    4. DECISION TREE:
+       - Are there 4+ products from the SAME CATEGORY in search results?
+         → YES: Prioritize best prices, then diversity
+         → NO: Return fewer alternatives (even 0), DO NOT mix categories
+
+    5. CATEGORY COHERENCE > EVERYTHING ELSE:
+       - It's better to return 0 alternatives than to suggest wrong category
+       - It's better to return 4 from same domain than to mix categories
+       - NEVER sacrifice category coherence for diversity or price
       - If you cannot find 4 products with domain diversity, it's acceptable to have duplicates
       - But you MUST prioritize diversity first
       - Only use the same domain for 3+ products if absolutely no other options exist
@@ -2163,8 +2255,16 @@ async function analyzeWithGroq(
         return true;
       });
 
-    // ✅ Enforce domain diversity (maximum 2 products per domain)
-    const diverseAlternatives = enforceDomainDiversity(validatedAlternatives);
+    // ✅ STEP 1: Validate category coherence (CRITICAL - prevents cross-category pollution)
+    const coherentAlternatives = validateCategoryCoherence(
+      validatedAlternatives,
+      category,
+      categoryData,
+      productType
+    );
+
+    // ✅ STEP 2: Enforce domain diversity (reorder for variety)
+    const diverseAlternatives = enforceDomainDiversity(coherentAlternatives);
 
     // ✅ Ensure minimum 4 alternatives
     const MIN_ALTERNATIVES = 4;
