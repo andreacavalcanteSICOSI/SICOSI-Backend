@@ -1909,10 +1909,47 @@ async function analyzeWithGroq(
     CRITICAL INSTRUCTIONS - READ CAREFULLY:
     ═══════════════════════════════════════════════════════════════
 
+    🚨 RULE #0 - CATEGORY COHERENCE (MOST IMPORTANT):
+    ═══════════════════════════════════════════════════════════════
+    
+    The original product is from category: "${category}" (${categoryData.name})
+    Product type: "${productType}"
+    
+    ALL ALTERNATIVES MUST BE FROM THE SAME CATEGORY AND PRODUCT TYPE.
+    
+    ❌ NEVER suggest products from different categories:
+       - If original is CLOTHING (sweater, shirt, pants), DO NOT suggest electronics, furniture, or appliances
+       - If original is ELECTRONICS (phone, laptop), DO NOT suggest clothing, food, or furniture
+       - If original is PERSONAL CARE (shampoo, soap), DO NOT suggest electronics, clothing, or furniture
+       - If original is FURNITURE (chair, table), DO NOT suggest electronics, clothing, or appliances
+    
+    ✅ ONLY suggest products that:
+       1. Belong to the EXACT SAME category: "${category}"
+       2. Are the SAME product type: "${productType}"
+       3. Serve the SAME purpose as the original product
+    
+    EXAMPLES OF CORRECT ALTERNATIVES:
+    - Original: Cotton Sweater → Alternatives: Organic wool sweater, bamboo pullover, recycled cotton jumper
+    - Original: Shampoo → Alternatives: Organic shampoo, sulfate-free shampoo, natural hair wash
+    - Original: Laptop → Alternatives: Refurbished laptop, energy-efficient laptop, recycled materials laptop
+    
+    EXAMPLES OF INCORRECT ALTERNATIVES (NEVER DO THIS):
+    - Original: Sweater → ❌ Printer, Air conditioner, Furniture (WRONG CATEGORY)
+    - Original: Shampoo → ❌ Laptop, Clothing, Furniture (WRONG CATEGORY)
+    - Original: Phone → ❌ Shampoo, Sweater, Chair (WRONG CATEGORY)
+    
+    IF YOU CANNOT FIND 4 ALTERNATIVES FROM THE SAME CATEGORY IN THE SEARCH RESULTS:
+    - Return fewer alternatives (even 0 is acceptable)
+    - DO NOT fill the gap with products from other categories
+    - Category coherence is MORE IMPORTANT than meeting the minimum count
+    
+    ═══════════════════════════════════════════════════════════════
+
     1. MINIMUM ALTERNATIVES REQUIRED:
-      - You MUST provide AT LEAST 4 sustainable alternatives
-      - If you cannot find 4 alternatives from the search results, you have failed
-      - Look through ALL products in "REAL PRODUCTS FOUND" to find 4 valid options
+      - You SHOULD provide AT LEAST 4 sustainable alternatives
+      - BUT ONLY if they are from the same category as the original
+      - If you cannot find 4 alternatives from the SAME CATEGORY, return fewer
+      - Look through ALL products in "REAL PRODUCTS FOUND" to find valid options
 
     2. PRODUCT MATCHING:
       - Suggest ONLY products that appear in the "REAL PRODUCTS FOUND" list above
@@ -1927,12 +1964,13 @@ async function analyzeWithGroq(
       - If a product from the list doesn't have a clear URL, skip it and find another
       - EVERY alternative MUST have a real, working URL from the search results
 
-    4. VALIDATION CHECKLIST (Check each alternative):
+    4. VALIDATION CHECKLIST (Check each alternative IN THIS ORDER):
+      ✓ Is it from the SAME CATEGORY as "${category}"? (If NO, REMOVE IT IMMEDIATELY)
+      ✓ Is it the SAME PRODUCT TYPE as "${productType}"? (If NO, REMOVE IT IMMEDIATELY)
       ✓ Does this product appear in "REAL PRODUCTS FOUND"? (If NO, remove it)
       ✓ Is the URL copied exactly from the search results? (If NO, remove it)
       ✓ Is the URL from a store in ${userCountry}? (If NO, remove it)
       ✓ Is the sustainability_score >= 70? (If NO, remove it)
-      ✓ Is it the same product type as the original? (If NO, remove it)
 
     5. COUNTRY VERIFICATION:
       - ALL product URLs MUST be from stores that operate in ${userCountry}
