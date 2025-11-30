@@ -974,6 +974,93 @@ Return ONLY the specific product type in English, nothing else.`;
   }
 }
 
+/**
+ * Validates if a URL is a real e-commerce product URL (not a search engine)
+ * Generic validation without hardcoded domain lists - works for any country/language
+ * @param {string | null | undefined} url - URL to validate
+ * @returns {boolean} - true if valid e-commerce URL, false if search engine or invalid
+ */
+function isValidEcommerceUrl(url: string | null | undefined): boolean {
+  if (!url) return true; // null/undefined is valid (frontend will handle)
+  
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname.toLowerCase();
+    const searchParams = parsed.search.toLowerCase();
+    
+    // Pattern 1: Common search engine domains (generic patterns)
+    const searchEnginePatterns = [
+      'google',      // google.com, google.de, google.co.uk, etc.
+      'bing',        // bing.com
+      'yahoo',       // yahoo.com, yahoo.co.jp, etc.
+      'duckduckgo',  // duckduckgo.com
+      'baidu',       // baidu.com (China)
+      'yandex',      // yandex.ru (Russia)
+      'naver',       // naver.com (Korea)
+      'ask',         // ask.com
+      'aol',         // aol.com
+      'ecosia',      // ecosia.org
+    ];
+    
+    // Check if hostname contains any search engine pattern
+    if (searchEnginePatterns.some(pattern => hostname.includes(pattern))) {
+      console.log(`⚠️ [URL-VALIDATION] Detected search engine in hostname: ${hostname}`);
+      return false;
+    }
+    
+    // Pattern 2: Search path patterns (universal)
+    const searchPathPatterns = [
+      '/search',     // /search, /search/, /search?q=
+      '/s/',         // /s/query
+      '/query',      // /query
+      '/find',       // /find
+      '/results',    // /results
+    ];
+    
+    if (searchPathPatterns.some(pattern => pathname.includes(pattern))) {
+      console.log(`⚠️ [URL-VALIDATION] Detected search path pattern: ${pathname}`);
+      return false;
+    }
+    
+    // Pattern 3: Search query parameters (universal)
+    const searchQueryPatterns = [
+      'q=',          // ?q=query (most common)
+      'query=',      // ?query=
+      'search=',     // ?search=
+      'keyword=',    // ?keyword=
+      's=',          // ?s=query
+    ];
+    
+    if (searchQueryPatterns.some(pattern => searchParams.includes(pattern))) {
+      console.log(`⚠️ [URL-VALIDATION] Detected search query parameter: ${searchParams}`);
+      return false;
+    }
+    
+    // Pattern 4: URL shorteners and redirects (often used in search results)
+    const redirectPatterns = [
+      'bit.ly',
+      'tinyurl',
+      'goo.gl',
+      't.co',
+      'ow.ly',
+    ];
+    
+    if (redirectPatterns.some(pattern => hostname.includes(pattern))) {
+      console.log(`⚠️ [URL-VALIDATION] Detected URL shortener: ${hostname}`);
+      return false;
+    }
+    
+    // ✅ URL passed all validation checks
+    return true;
+  } catch (error) {
+    // Invalid URL format
+    console.log(`⚠️ [URL-VALIDATION] Invalid URL format: ${url}`);
+    return false;
+  }
+}
+
+
 // ════════════════════════════════════════════════════════════
 // FUNÇÃO AUXILIAR: Extrai domínios do país dinamicamente
 // ════════════════════════════════════════════════════════════
@@ -1945,30 +2032,33 @@ async function analyzeWithGroq(
       const countryContext =
         COUNTRY_ECOMMERCE[userCountry] || COUNTRY_ECOMMERCE["US"];
       const productTypeFallback = productType || "product";
-      const googleQueryText = `sustainable eco-friendly ${productTypeFallback} buy ${countryContext.name}`;
-      const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(
-        googleQueryText
-      )}`;
 
       const needed = MIN_ALTERNATIVES - validatedAlternatives.length;
-      console.log(`⚠️ [FALLBACK] Only ${validatedAlternatives.length} alternatives found, adding ${needed} Google search links`);
+      console.log(`⚠️ [FALLBACK] Only ${validatedAlternatives.length} alternatives found, adding ${needed} fallback entries`);
 
       for (let i = 0; i < needed; i++) {
         validatedAlternatives.push({
           name: `Search more sustainable alternatives`,
-          description: `We couldn't find enough specific products, but you can search for sustainable alternatives here`,
+          description: `We couldn't find enough specific products, but you can search for sustainable alternatives`,
           benefits: `Find sustainable ${productTypeFallback} options available in ${countryContext.name}`,
           sustainability_score: 0,
-          where_to_buy: `Google Search`,
+          where_to_buy: `Search online`,
           certifications: [],
-          product_url: googleSearchUrl,
+          product_url: null,  // ✅ Set to null - frontend will show "Search on Google" button
         });
       }
 
-      console.log(`🔍 [FALLBACK] Added ${needed} Google search link(s) to reach minimum ${MIN_ALTERNATIVES} alternatives`);
+      console.log(`🔍 [FALLBACK] Added ${needed} fallback alternative(s) with null URLs to reach minimum ${MIN_ALTERNATIVES} alternatives`);
     }
 
-    result.alternatives = validatedAlternatives;
+    // ✅ Final validation: Clean any search engine URLs that might have slipped through
+    result.alternatives = validatedAlternatives.map(alt => {
+      if (!isValidEcommerceUrl(alt.product_url)) {
+        console.log(`⚠️ [FINAL-VALIDATION] Removing invalid/search URL: ${alt.product_url}`);
+        return { ...alt, product_url: null };
+      }
+      return alt;
+    });
 
     console.log("✅ [FINAL] Validated alternatives:", {
       count: validatedAlternatives.length,
