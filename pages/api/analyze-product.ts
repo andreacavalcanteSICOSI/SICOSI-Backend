@@ -1061,56 +1061,72 @@ function isValidEcommerceUrl(url: string | null | undefined): boolean {
 }
 
 /**
- * Enforces domain diversity in alternatives - maximum 2 products per domain
+ * Prioritizes domain diversity in alternatives - reorders to show diverse domains first
+ * Does NOT remove products, just reorders to maximize diversity in top results
  * Generic implementation that works with any e-commerce domain
  * @param {Alternative[]} alternatives - List of alternative products
- * @returns {Alternative[]} - Filtered list with maximum 2 products per domain
+ * @returns {Alternative[]} - Reordered list with diverse domains prioritized
  */
 function enforceDomainDiversity(alternatives: Alternative[]): Alternative[] {
   if (!alternatives || alternatives.length === 0) {
     return alternatives;
   }
 
-  const domainCount: Record<string, number> = {};
-  const diverseAlternatives: Alternative[] = [];
+  const domainGroups: Record<string, Alternative[]> = {};
+  const nullUrlAlternatives: Alternative[] = [];
 
-  console.log(`🔍 [DIVERSITY] Enforcing domain diversity on ${alternatives.length} alternatives`);
+  console.log(`🔍 [DIVERSITY] Reordering ${alternatives.length} alternatives for diversity`);
 
+  // Group alternatives by domain
   for (const alt of alternatives) {
     if (!alt.product_url) {
-      // Keep alternatives without URLs
-      diverseAlternatives.push(alt);
+      nullUrlAlternatives.push(alt);
       continue;
     }
 
     try {
       const url = new URL(alt.product_url);
-      // Extract main domain (e.g., "amazon.de" from "www.amazon.de")
       const domain = url.hostname.replace(/^www\./, '').toLowerCase();
 
-      // Count how many products we already have from this domain
-      const currentCount = domainCount[domain] || 0;
-
-      if (currentCount < 2) {
-        // Allow this product (under the limit of 2 per domain)
-        diverseAlternatives.push(alt);
-        domainCount[domain] = currentCount + 1;
-        console.log(`✅ [DIVERSITY] Added from ${domain} (${currentCount + 1}/2): ${alt.name}`);
-      } else {
-        // Skip this product (already have 2 from this domain)
-        console.log(`⚠️ [DIVERSITY] Skipped from ${domain} (limit reached): ${alt.name}`);
+      if (!domainGroups[domain]) {
+        domainGroups[domain] = [];
       }
+      domainGroups[domain].push(alt);
     } catch (error) {
-      // Invalid URL, keep it anyway
-      diverseAlternatives.push(alt);
+      // Invalid URL, add to null group
+      nullUrlAlternatives.push(alt);
     }
   }
 
-  console.log(`📊 [DIVERSITY] Domain distribution:`, domainCount);
-  console.log(`✅ [DIVERSITY] Reduced from ${alternatives.length} to ${diverseAlternatives.length} alternatives`);
+  // Reorder: Take products round-robin from each domain to maximize diversity
+  const reorderedAlternatives: Alternative[] = [];
+  const domains = Object.keys(domainGroups);
+  let maxProductsPerDomain = Math.max(...domains.map(d => domainGroups[d].length));
 
-  return diverseAlternatives;
+  // Round-robin: take 1 from each domain, then repeat
+  for (let i = 0; i < maxProductsPerDomain; i++) {
+    for (const domain of domains) {
+      if (domainGroups[domain][i]) {
+        reorderedAlternatives.push(domainGroups[domain][i]);
+        console.log(`✅ [DIVERSITY] Added from ${domain}: ${domainGroups[domain][i].name}`);
+      }
+    }
+  }
+
+  // Add alternatives without URLs at the end
+  reorderedAlternatives.push(...nullUrlAlternatives);
+
+  // Log domain distribution
+  const domainCount: Record<string, number> = {};
+  domains.forEach(d => {
+    domainCount[d] = domainGroups[d].length;
+  });
+  console.log(`📊 [DIVERSITY] Domain distribution:`, domainCount);
+  console.log(`✅ [DIVERSITY] Reordered ${alternatives.length} alternatives (kept all, prioritized diversity)`);
+
+  return reorderedAlternatives;
 }
+
 
 
 // ════════════════════════════════════════════════════════════
