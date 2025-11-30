@@ -1872,6 +1872,36 @@ async function analyzeWithGroq(
       - If a URL is from a different country, DO NOT include it
 
     ═══════════════════════════════════════════════════════════════
+    DOMAIN DIVERSITY REQUIREMENT (MANDATORY):
+    ═══════════════════════════════════════════════════════════════
+
+    1. MAXIMUM 2 PRODUCTS PER DOMAIN:
+      - Extract the domain from each product URL (e.g., amazon.de, mercadolivre.com.br)
+      - You MUST NOT select more than 2 alternatives from the same domain
+      - If you find 3+ good products from one domain, choose only the best 2
+
+    2. PRIORITIZATION ORDER:
+      a) Specialized eco-friendly/sustainable stores (highest priority)
+      b) Different general retailers (medium priority)
+      c) Same domain as other alternatives (lowest priority - max 2)
+
+    3. DIVERSITY EXAMPLES:
+      ✓ GOOD: 1 from amazon.de + 1 from ebay.de + 1 from avocadostore.de + 1 from waschbaer.de
+      ✓ GOOD: 2 from amazon.de + 1 from otto.de + 1 from mediamarkt.de
+      ✗ BAD: 4 from amazon.de (violates max 2 per domain rule)
+      ✗ BAD: 3 from mercadolivre.com.br + 1 from amazon.com.br (violates max 2 per domain rule)
+
+    4. FALLBACK BEHAVIOR:
+      - If you cannot find 4 products with domain diversity, it's acceptable to have duplicates
+      - But you MUST prioritize diversity first
+      - Only use the same domain for 3+ products if absolutely no other options exist
+
+    5. DOMAIN EXTRACTION:
+      - Domain = the main website (e.g., "amazon.de" from "https://www.amazon.de/dp/B123")
+      - Subdomains count as same domain (e.g., "www.amazon.de" = "amazon.de")
+      - Different country TLDs are different domains (e.g., "amazon.de" ≠ "amazon.com")
+
+    ═══════════════════════════════════════════════════════════════
     VALIDATION RULES (MANDATORY):
     ═══════════════════════════════════════════════════════════════
 
@@ -1881,7 +1911,8 @@ async function analyzeWithGroq(
     4. Use ONLY products from the "REAL PRODUCTS FOUND" list
     5. Use ONLY exact URLs from the search results
     6. ALL URLs must be from stores in ${userCountry}
-    7. If you cannot find 4 valid alternatives, review the list again more carefully
+    7. MAXIMUM 2 alternatives per domain (prioritize diversity)
+    8. If you cannot find 4 valid alternatives, review the list again more carefully
 
     ═══════════════════════════════════════════════════════════════
     REQUIRED JSON RESPONSE FORMAT:
