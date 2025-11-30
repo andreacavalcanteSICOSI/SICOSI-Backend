@@ -1060,6 +1060,58 @@ function isValidEcommerceUrl(url: string | null | undefined): boolean {
   }
 }
 
+/**
+ * Enforces domain diversity in alternatives - maximum 2 products per domain
+ * Generic implementation that works with any e-commerce domain
+ * @param {Alternative[]} alternatives - List of alternative products
+ * @returns {Alternative[]} - Filtered list with maximum 2 products per domain
+ */
+function enforceDomainDiversity(alternatives: Alternative[]): Alternative[] {
+  if (!alternatives || alternatives.length === 0) {
+    return alternatives;
+  }
+
+  const domainCount: Record<string, number> = {};
+  const diverseAlternatives: Alternative[] = [];
+
+  console.log(`🔍 [DIVERSITY] Enforcing domain diversity on ${alternatives.length} alternatives`);
+
+  for (const alt of alternatives) {
+    if (!alt.product_url) {
+      // Keep alternatives without URLs
+      diverseAlternatives.push(alt);
+      continue;
+    }
+
+    try {
+      const url = new URL(alt.product_url);
+      // Extract main domain (e.g., "amazon.de" from "www.amazon.de")
+      const domain = url.hostname.replace(/^www\./, '').toLowerCase();
+
+      // Count how many products we already have from this domain
+      const currentCount = domainCount[domain] || 0;
+
+      if (currentCount < 2) {
+        // Allow this product (under the limit of 2 per domain)
+        diverseAlternatives.push(alt);
+        domainCount[domain] = currentCount + 1;
+        console.log(`✅ [DIVERSITY] Added from ${domain} (${currentCount + 1}/2): ${alt.name}`);
+      } else {
+        // Skip this product (already have 2 from this domain)
+        console.log(`⚠️ [DIVERSITY] Skipped from ${domain} (limit reached): ${alt.name}`);
+      }
+    } catch (error) {
+      // Invalid URL, keep it anyway
+      diverseAlternatives.push(alt);
+    }
+  }
+
+  console.log(`📊 [DIVERSITY] Domain distribution:`, domainCount);
+  console.log(`✅ [DIVERSITY] Reduced from ${alternatives.length} to ${diverseAlternatives.length} alternatives`);
+
+  return diverseAlternatives;
+}
+
 
 // ════════════════════════════════════════════════════════════
 // FUNÇÃO AUXILIAR: Extrai domínios do país dinamicamente
@@ -2057,18 +2109,21 @@ async function analyzeWithGroq(
         return true;
       });
 
+    // ✅ Enforce domain diversity (maximum 2 products per domain)
+    const diverseAlternatives = enforceDomainDiversity(validatedAlternatives);
+
     // ✅ Ensure minimum 4 alternatives
     const MIN_ALTERNATIVES = 4;
-    if (validatedAlternatives.length < MIN_ALTERNATIVES) {
+    if (diverseAlternatives.length < MIN_ALTERNATIVES) {
       const countryContext =
         COUNTRY_ECOMMERCE[userCountry] || COUNTRY_ECOMMERCE["US"];
       const productTypeFallback = productType || "product";
 
-      const needed = MIN_ALTERNATIVES - validatedAlternatives.length;
-      console.log(`⚠️ [FALLBACK] Only ${validatedAlternatives.length} alternatives found, adding ${needed} fallback entries`);
+      const needed = MIN_ALTERNATIVES - diverseAlternatives.length;
+      console.log(`⚠️ [FALLBACK] Only ${diverseAlternatives.length} alternatives found, adding ${needed} fallback entries`);
 
       for (let i = 0; i < needed; i++) {
-        validatedAlternatives.push({
+        diverseAlternatives.push({
           name: `Search more sustainable alternatives`,
           description: `We couldn't find enough specific products, but you can search for sustainable alternatives`,
           benefits: `Find sustainable ${productTypeFallback} options available in ${countryContext.name}`,
@@ -2083,7 +2138,7 @@ async function analyzeWithGroq(
     }
 
     // ✅ Final validation: Clean any search engine URLs that might have slipped through
-    result.alternatives = validatedAlternatives.map(alt => {
+    result.alternatives = diverseAlternatives.map(alt => {
       if (!isValidEcommerceUrl(alt.product_url)) {
         console.log(`⚠️ [FINAL-VALIDATION] Removing invalid/search URL: ${alt.product_url}`);
         return { ...alt, product_url: null };
@@ -2092,8 +2147,8 @@ async function analyzeWithGroq(
     });
 
     console.log("✅ [FINAL] Validated alternatives:", {
-      count: validatedAlternatives.length,
-      urls: validatedAlternatives.map((a) => a.product_url),
+      count: diverseAlternatives.length,
+      urls: diverseAlternatives.map((a) => a.product_url),
     });
 
     return result;
