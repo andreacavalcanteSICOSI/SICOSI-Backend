@@ -1696,16 +1696,31 @@ async function searchRealProducts(
         return false;
       }
 
-      // ✅ FILTRO RELAXADO: Aceita domínios do país OU domínios com nome do país
+      // ✅ IMPROVED: Accept any domain with country TLD or specific e-commerce sites
       const countryName = country.name.toLowerCase();
+      
+      // Extract TLD from allowed domains (e.g., "com.br" from "mercadolivre.com.br")
+      const countryTLDs = new Set<string>();
+      allowedDomains.forEach((domain: string) => {
+        const parts = domain.split('.');
+        if (parts.length >= 2) {
+          // Get last 2 parts (e.g., "com.br" or just "br")
+          const tld = parts.slice(-2).join('.');
+          countryTLDs.add(tld);
+          // Also add single TLD (e.g., "br")
+          countryTLDs.add(parts[parts.length - 1]);
+        }
+      });
+      
       const matchesDomain =
-        allowedDomains.some((domain: string) => host.includes(domain)) ||
-        host.includes(countryName) ||
-        url.includes(countryName);
+        allowedDomains.some((domain: string) => host.includes(domain)) || // Specific e-commerce
+        Array.from(countryTLDs).some(tld => host.endsWith(`.${tld}`)) ||  // Any domain with country TLD
+        host.includes(countryName) ||                                      // Domain contains country name
+        url.includes(countryName);                                         // URL contains country name
 
       if (!matchesDomain) {
         console.log(
-          `🔍 [FILTER] Rejected: ${url} - Reason: domain not in ${userCountry}`
+          `🔍 [FILTER] Rejected: ${url} - Reason: domain not in ${userCountry} (host: ${host}, allowed TLDs: ${Array.from(countryTLDs).join(', ')})`
         );
         return false;
       }
