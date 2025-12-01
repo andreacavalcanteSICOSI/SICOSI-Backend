@@ -2292,14 +2292,8 @@ async function analyzeWithGroq(
       console.log(`ℹ️ [INFO] Fewer than 4 alternatives found - frontend will add "Search on Google" button`);
     }
 
-    // ✅ Final validation: Clean any search engine URLs that might have slipped through
-    result.alternatives = finalAlternatives.map(alt => {
-      if (!isValidEcommerceUrl(alt.product_url)) {
-        console.log(`⚠️ [FINAL-VALIDATION] Removing invalid/search URL: ${alt.product_url}`);
-        return { ...alt, product_url: null };
-      }
-      return alt;
-    });
+    // Set final alternatives
+    result.alternatives = finalAlternatives;
 
     console.log("✅ [FINAL] Validated alternatives:", {
       count: finalAlternatives.length,
