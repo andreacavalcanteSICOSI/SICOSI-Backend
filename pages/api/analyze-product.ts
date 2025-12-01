@@ -2093,42 +2093,119 @@ async function analyzeWithGroq(
     🚨 FUNCTIONAL COHERENCE (ABSOLUTE PRIORITY):
     ═══════════════════════════════════════════════════════════════
     
-    CRITICAL: The alternative MUST have the EXACT SAME FUNCTION as the original product.
+    ⚠️ CRITICAL: This is the MOST IMPORTANT rule. Violating this rule makes the entire response USELESS.
     
     Original Product Type: "${productType}"
+    Original Product Name: "${productName}"
     Original Category: "${category}"
     
-    VALIDATION CHECKLIST FOR EACH ALTERNATIVE:
-    1. Does the alternative name contain "${productType}" or a direct synonym?
-    2. Does it serve the SAME PURPOSE as the original product?
-    3. Would a user be able to use this alternative for the SAME task?
+    ═══════════════════════════════════════════════════════════════
+    📋 STEP-BY-STEP VALIDATION PROCESS (MANDATORY FOR EACH ALTERNATIVE):
+    ═══════════════════════════════════════════════════════════════
     
-    If ANY answer is NO, REJECT the alternative immediately.
+    Before adding ANY alternative to your response, you MUST complete this checklist:
     
-    ✅ CORRECT EXAMPLES:
-    - Original: "eyeshadow palette" → Alternative: "organic eyeshadow palette" ✅
-    - Original: "eyeshadow palette" → Alternative: "mineral eyeshadow" ✅
-    - Original: "eyeshadow palette" → Alternative: "vegan eyeshadow set" ✅
-    - Original: "shampoo" → Alternative: "organic shampoo" ✅
-    - Original: "shampoo" → Alternative: "sulfate-free shampoo" ✅
-    - Original: "laptop" → Alternative: "refurbished laptop" ✅
-    - Original: "laptop" → Alternative: "energy-efficient laptop" ✅
+    STEP 1: EXTRACT PRODUCT TYPE
+    - What is the SPECIFIC product type of the original? "${productType}"
+    - Example: If original is "eyeshadow palette", the type is "eyeshadow palette" (NOT "makeup")
     
-    ❌ WRONG EXAMPLES (NEVER DO THIS):
-    - Original: "eyeshadow palette" → Alternative: "makeup sponge" ❌ (different function: sponge is a tool, eyeshadow is color)
-    - Original: "eyeshadow palette" → Alternative: "foundation" ❌ (different function: foundation is for face, eyeshadow is for eyes)
-    - Original: "eyeshadow palette" → Alternative: "lipstick" ❌ (different function: lips vs eyes)
-    - Original: "shampoo" → Alternative: "conditioner" ❌ (different function: cleansing vs conditioning)
-    - Original: "shampoo" → Alternative: "body wash" ❌ (different function: hair vs body)
-    - Original: "laptop" → Alternative: "tablet" ❌ (different function: different form factor and use case)
-    - Original: "laptop" → Alternative: "monitor" ❌ (different function: display vs computer)
+    STEP 2: CHECK ALTERNATIVE NAME
+    - Does the alternative name contain the EXACT words "${productType}"?
+    - OR does it contain a DIRECT SYNONYM? (e.g., "eye shadow" = "eyeshadow")
+    - If NO → REJECT immediately. Do NOT proceed to Step 3.
     
-    RULE: Same category is NOT enough. Must be same PRODUCT TYPE and FUNCTION.
+    STEP 3: VERIFY FUNCTION
+    - Can the alternative be used for the EXACT SAME PURPOSE as "${productName}"?
+    - Example: If original is "eyeshadow palette" → Can this alternative color eyelids? YES/NO
+    - If NO → REJECT immediately.
     
-    EXAMPLE VALIDATION:
-    - If original is "eyeshadow palette", alternative MUST be another eyeshadow product
-    - If original is "shampoo", alternative MUST be another shampoo (not conditioner, not soap)
-    - If original is "laptop", alternative MUST be another laptop (not tablet, not desktop)
+    STEP 4: FINAL CHECK
+    - Would a user looking for "${productType}" be satisfied with this alternative?
+    - If NO → REJECT immediately.
+    
+    ═══════════════════════════════════════════════════════════════
+    ✅ CORRECT EXAMPLES (Study these carefully):
+    ═══════════════════════════════════════════════════════════════
+    
+    Example 1: Original = "eyeshadow palette"
+    ✅ CORRECT: "Organic Eyeshadow Palette" (contains "eyeshadow palette")
+    ✅ CORRECT: "Mineral Eye Shadow Set" (synonym: eye shadow = eyeshadow, set = palette)
+    ✅ CORRECT: "Vegan Eyeshadow Collection" (contains "eyeshadow", collection ≈ palette)
+    ✅ CORRECT: "Natural Eyeshadow Kit" (contains "eyeshadow", kit ≈ palette)
+    
+    Example 2: Original = "shampoo"
+    ✅ CORRECT: "Organic Shampoo" (contains "shampoo")
+    ✅ CORRECT: "Sulfate-Free Shampoo" (contains "shampoo")
+    ✅ CORRECT: "Natural Hair Shampoo" (contains "shampoo")
+    
+    Example 3: Original = "camping tent"
+    ✅ CORRECT: "Eco-Friendly Camping Tent" (contains "camping tent")
+    ✅ CORRECT: "Sustainable Tent for Camping" (contains "tent" + "camping")
+    ✅ CORRECT: "Recycled Material Camping Tent" (contains "camping tent")
+    
+    ═══════════════════════════════════════════════════════════════
+    ❌ WRONG EXAMPLES (NEVER DO THIS - These are CRITICAL MISTAKES):
+    ═══════════════════════════════════════════════════════════════
+    
+    Example 1: Original = "eyeshadow palette"
+    ❌ WRONG: "Makeup Sponge" 
+       Why? Sponge is a TOOL for applying makeup. Eyeshadow is a COLOR product.
+       Different function: sponge applies, eyeshadow colors. REJECT!
+    
+    ❌ WRONG: "Makeup Brush Set"
+       Why? Brushes are TOOLS. Eyeshadow is a COLOR product. REJECT!
+    
+    ❌ WRONG: "Foundation"
+       Why? Foundation is for FACE. Eyeshadow is for EYES. Different body part. REJECT!
+    
+    ❌ WRONG: "Lipstick"
+       Why? Lipstick is for LIPS. Eyeshadow is for EYES. Different body part. REJECT!
+    
+    ❌ WRONG: "Mascara"
+       Why? Mascara is for LASHES. Eyeshadow is for EYELIDS. Different function. REJECT!
+    
+    Example 2: Original = "shampoo"
+    ❌ WRONG: "Conditioner"
+       Why? Shampoo CLEANSES hair. Conditioner MOISTURIZES hair. Different function. REJECT!
+    
+    ❌ WRONG: "Body Wash"
+       Why? Shampoo is for HAIR. Body wash is for BODY. Different body part. REJECT!
+    
+    ❌ WRONG: "Hair Mask"
+       Why? Shampoo CLEANSES. Hair mask TREATS. Different function. REJECT!
+    
+    Example 3: Original = "camping tent"
+    ❌ WRONG: "Sleeping Bag"
+       Why? Tent is SHELTER. Sleeping bag is BEDDING. Different function. REJECT!
+    
+    ❌ WRONG: "Camping Backpack"
+       Why? Tent is SHELTER. Backpack is STORAGE. Different function. REJECT!
+    
+    ❌ WRONG: "Camping Stove"
+       Why? Tent is SHELTER. Stove is COOKING. Different function. REJECT!
+    
+    ═══════════════════════════════════════════════════════════════
+    🔒 MANDATORY SELF-VERIFICATION (Before returning your response):
+    ═══════════════════════════════════════════════════════════════
+    
+    Before you return your JSON response, you MUST verify:
+    
+    1. Count how many alternatives you're returning: _____
+    2. For EACH alternative, verify it contains the words "${productType}" in its name
+    3. If ANY alternative does NOT contain "${productType}" → REMOVE IT from your response
+    4. If you have 0 alternatives after filtering → Return empty array []
+    5. NEVER return alternatives that don't match the product type
+    
+    ═══════════════════════════════════════════════════════════════
+    ⚠️ FINAL WARNING:
+    ═══════════════════════════════════════════════════════════════
+    
+    If you return even ONE alternative that doesn't match "${productType}", 
+    the ENTIRE response will be considered FAILED and USELESS.
+    
+    It is BETTER to return 0 alternatives than to return wrong alternatives.
+    
+    Quality > Quantity. Coherence > Count.
     
     ═══════════════════════════════════════════════════════════════
     
@@ -2339,7 +2416,12 @@ async function analyzeWithGroq(
         {
           role: "system",
           content:
-            "Return valid JSON only. Use real products. Match product types strictly.",
+            `You are a sustainability expert. CRITICAL RULES:
+1. Alternatives MUST match the exact product type "${productType}"
+2. Check EACH alternative name contains "${productType}" before adding it
+3. If unsure, DO NOT include the alternative
+4. Return valid JSON only - no markdown, no comments
+5. Quality over quantity - better 0 alternatives than wrong alternatives`,
         },
         { role: "user", content: prompt },
       ],
