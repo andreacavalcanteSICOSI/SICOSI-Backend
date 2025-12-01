@@ -899,6 +899,11 @@ async function detectProductType(
   for (const [, data] of Object.entries(categories)) {
     if (data.product_types) {
       for (const type of data.product_types) {
+        // ✅ Skip very short/generic words (like "fio", "tv", etc.)
+        if (type.length < 4) {
+          continue;
+        }
+        
         // Usar regex com word boundaries
         const pattern = new RegExp(`\\b${type}s?\\b`, "i");
         if (pattern.test(lowerName) || pattern.test(lowerTitle)) {
