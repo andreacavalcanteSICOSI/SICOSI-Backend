@@ -1175,14 +1175,21 @@ function validateCategoryCoherence(
     const combinedText = `${altName} ${altDescription}`;
 
     // ✅ NEW: Validate product type match (functional coherence)
+    // Only apply strict productType check if productType is meaningful (not too short/generic)
     const productTypeKeywords = productType.toLowerCase().split(/\s+/);
-    const hasProductTypeMatch = productTypeKeywords.some(keyword => 
-      keyword.length > 2 && combinedText.includes(keyword)
-    );
+    const hasMeaningfulProductType = productTypeKeywords.some(kw => kw.length > 3);
+    
+    if (hasMeaningfulProductType) {
+      const hasProductTypeMatch = productTypeKeywords.some(keyword => 
+        keyword.length > 3 && combinedText.includes(keyword)
+      );
 
-    if (!hasProductTypeMatch) {
-      console.log(`❌ [COHERENCE] Removed "${alt.name}": Different product type (expected: ${productType}, found: ${altName})`);
-      return false;
+      if (!hasProductTypeMatch) {
+        console.log(`❌ [COHERENCE] Removed "${alt.name}": Different product type (expected: ${productType}, found: ${altName})`);
+        return false;
+      }
+    } else {
+      console.log(`ℹ️ [COHERENCE] Skipping productType check for "${alt.name}" (productType too generic: "${productType}")`);
     }
 
     // Check if alternative matches category keywords
@@ -1214,7 +1221,7 @@ function validateCategoryCoherence(
     if (!hasMatchingKeyword) {
       console.log(`⚠️ [COHERENCE] Warning "${alt.name}": No matching keywords, but keeping (might be valid)`);
     } else {
-      console.log(`✅ [COHERENCE] Valid "${alt.name}": Matches category and product type`);
+      console.log(`✅ [COHERENCE] Valid "${alt.name}": Matches category${hasMeaningfulProductType ? ' and product type' : ''}`);
     }
 
     return true;
