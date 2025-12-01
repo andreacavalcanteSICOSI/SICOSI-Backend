@@ -1169,6 +1169,17 @@ function validateCategoryCoherence(
     const altDescription = (alt.description || "").toLowerCase();
     const combinedText = `${altName} ${altDescription}`;
 
+    // ✅ NEW: Validate product type match (functional coherence)
+    const productTypeKeywords = productType.toLowerCase().split(/\s+/);
+    const hasProductTypeMatch = productTypeKeywords.some(keyword => 
+      keyword.length > 2 && combinedText.includes(keyword)
+    );
+
+    if (!hasProductTypeMatch) {
+      console.log(`❌ [COHERENCE] Removed "${alt.name}": Different product type (expected: ${productType}, found: ${altName})`);
+      return false;
+    }
+
     // Check if alternative matches category keywords
     const hasMatchingKeyword = categoryKeywords.some((kw: string) => 
       combinedText.includes(kw.toLowerCase())
@@ -1198,7 +1209,7 @@ function validateCategoryCoherence(
     if (!hasMatchingKeyword) {
       console.log(`⚠️ [COHERENCE] Warning "${alt.name}": No matching keywords, but keeping (might be valid)`);
     } else {
-      console.log(`✅ [COHERENCE] Valid "${alt.name}": Matches category`);
+      console.log(`✅ [COHERENCE] Valid "${alt.name}": Matches category and product type`);
     }
 
     return true;
@@ -1561,15 +1572,15 @@ async function searchRealProducts(
 }> {
   const country = COUNTRY_ECOMMERCE[userCountry] || COUNTRY_ECOMMERCE["US"];
 
-  // Query otimizada com site: operator
-  const query = `sustainable eco-friendly ${productType} ${
+  // ✅ IMPROVED: Use exact productType in quotes for more specific results
+  const primaryQuery = `sustainable eco-friendly "${productType}" buy shop ${
     country.name
   } (${country.domains.map((d: string) => "site:" + d).join(" OR ")})`;
 
-  console.log(`🔍 [TAVILY] Query: ${query}`);
+  console.log(`🔍 [TAVILY] Primary Query: ${primaryQuery}`);
 
   try {
-    let results = await webSearchClient.search(query, {
+    let results = await webSearchClient.search(primaryQuery, {
       maxResults: 100,
       searchDepth: "advanced",
       includeAnswer: false,
@@ -1579,26 +1590,69 @@ async function searchRealProducts(
       (results.results || []).map((r) => r.url).filter(Boolean)
     );
 
-    console.log(`🔍 [TAVILY] Found ${validUrls.size} valid product URLs`);
+    console.log(`🔍 [TAVILY] Primary search found ${validUrls.size} URLs`);
 
-    // ✅ FALLBACK: Se poucos resultados, simplificar query
-    if (!results.success || !results.results || results.results.length < 5) {
-      console.log("⚠️ [SEARCH] Few results, trying broader query...");
-      const fallbackQuery = `eco-friendly sustainable ${productType} shop`;
-      console.log("🔎 [SEARCH] Query (broad):", fallbackQuery);
+    // ✅ NEW: Log sample results for debugging
+    if (validUrls.size > 0) {
+      console.log(`📋 [TAVILY] Sample results from primary query:`);
+      Array.from(validUrls).slice(0, 3).forEach((url, i) => {
+        console.log(`  ${i + 1}. ${url}`);
+      });
+    }
 
-      results = await webSearchClient.search(fallbackQuery, {
+    // ✅ FALLBACK 1: If few results, try without quotes (broader)
+    if (!results.success || !results.results || results.results.length < 8) {
+      console.log(`⚠️ [SEARCH] Only ${results.results?.length || 0} results, trying fallback 1 (no quotes)...`);
+      const fallback1Query = `sustainable eco-friendly ${productType} ${country.name}`;
+      console.log(`🔎 [SEARCH] Fallback 1 Query: ${fallback1Query}`);
+
+      const fallback1Results = await webSearchClient.search(fallback1Query, {
         maxResults: 100,
         searchDepth: "advanced",
         includeAnswer: false,
       });
 
-      (results.results || []).forEach((r) => {
+      (fallback1Results.results || []).forEach((r) => {
         if (r?.url) {
           validUrls.add(r.url);
         }
       });
+
+      console.log(`🔍 [TAVILY] After fallback 1: ${validUrls.size} total URLs`);
+
+      // Merge results
+      if (fallback1Results.results) {
+        results.results = [...(results.results || []), ...fallback1Results.results];
+      }
     }
+
+    // ✅ FALLBACK 2: If still few results, try very broad query
+    if (validUrls.size < 8) {
+      console.log(`⚠️ [SEARCH] Only ${validUrls.size} URLs, trying fallback 2 (very broad)...`);
+      const fallback2Query = `eco-friendly ${productType} shop online`;
+      console.log(`🔎 [SEARCH] Fallback 2 Query: ${fallback2Query}`);
+
+      const fallback2Results = await webSearchClient.search(fallback2Query, {
+        maxResults: 100,
+        searchDepth: "advanced",
+        includeAnswer: false,
+      });
+
+      (fallback2Results.results || []).forEach((r) => {
+        if (r?.url) {
+          validUrls.add(r.url);
+        }
+      });
+
+      console.log(`🔍 [TAVILY] After fallback 2: ${validUrls.size} total URLs`);
+
+      // Merge results
+      if (fallback2Results.results) {
+        results.results = [...(results.results || []), ...fallback2Results.results];
+      }
+    }
+
+    console.log(`✅ [TAVILY] Final total: ${validUrls.size} unique URLs from all queries`);
 
     if (!results.success || !results.results) {
       return { products: [], validUrls: Array.from(validUrls) };
@@ -1999,6 +2053,49 @@ async function analyzeWithGroq(
     
     ALL ALTERNATIVES MUST BE FROM THE SAME CATEGORY AND PRODUCT TYPE.
     
+    ═══════════════════════════════════════════════════════════════
+    🚨 FUNCTIONAL COHERENCE (ABSOLUTE PRIORITY):
+    ═══════════════════════════════════════════════════════════════
+    
+    CRITICAL: The alternative MUST have the EXACT SAME FUNCTION as the original product.
+    
+    Original Product Type: "${productType}"
+    Original Category: "${category}"
+    
+    VALIDATION CHECKLIST FOR EACH ALTERNATIVE:
+    1. Does the alternative name contain "${productType}" or a direct synonym?
+    2. Does it serve the SAME PURPOSE as the original product?
+    3. Would a user be able to use this alternative for the SAME task?
+    
+    If ANY answer is NO, REJECT the alternative immediately.
+    
+    ✅ CORRECT EXAMPLES:
+    - Original: "eyeshadow palette" → Alternative: "organic eyeshadow palette" ✅
+    - Original: "eyeshadow palette" → Alternative: "mineral eyeshadow" ✅
+    - Original: "eyeshadow palette" → Alternative: "vegan eyeshadow set" ✅
+    - Original: "shampoo" → Alternative: "organic shampoo" ✅
+    - Original: "shampoo" → Alternative: "sulfate-free shampoo" ✅
+    - Original: "laptop" → Alternative: "refurbished laptop" ✅
+    - Original: "laptop" → Alternative: "energy-efficient laptop" ✅
+    
+    ❌ WRONG EXAMPLES (NEVER DO THIS):
+    - Original: "eyeshadow palette" → Alternative: "makeup sponge" ❌ (different function: sponge is a tool, eyeshadow is color)
+    - Original: "eyeshadow palette" → Alternative: "foundation" ❌ (different function: foundation is for face, eyeshadow is for eyes)
+    - Original: "eyeshadow palette" → Alternative: "lipstick" ❌ (different function: lips vs eyes)
+    - Original: "shampoo" → Alternative: "conditioner" ❌ (different function: cleansing vs conditioning)
+    - Original: "shampoo" → Alternative: "body wash" ❌ (different function: hair vs body)
+    - Original: "laptop" → Alternative: "tablet" ❌ (different function: different form factor and use case)
+    - Original: "laptop" → Alternative: "monitor" ❌ (different function: display vs computer)
+    
+    RULE: Same category is NOT enough. Must be same PRODUCT TYPE and FUNCTION.
+    
+    EXAMPLE VALIDATION:
+    - If original is "eyeshadow palette", alternative MUST be another eyeshadow product
+    - If original is "shampoo", alternative MUST be another shampoo (not conditioner, not soap)
+    - If original is "laptop", alternative MUST be another laptop (not tablet, not desktop)
+    
+    ═══════════════════════════════════════════════════════════════
+    
     ❌ NEVER suggest products from different categories:
        - If original is CLOTHING (sweater, shirt, pants), DO NOT suggest electronics, furniture, or appliances
        - If original is ELECTRONICS (phone, laptop), DO NOT suggest clothing, food, or furniture
@@ -2038,13 +2135,35 @@ async function analyzeWithGroq(
       - Match products by name and description from the search results
       - Each alternative MUST correspond to one of the numbered items above
 
-    3. URL USAGE (CRITICAL - DO NOT VIOLATE):
-      - Use the EXACT URL from the search results (copy it character-by-character)
-      - DO NOT modify, shorten, or create new URLs under ANY circumstances
-      - DO NOT invent URLs even if you know the product exists
-      - DO NOT use placeholder URLs like "example.com" or "store.com"
-      - If a product from the list doesn't have a clear URL, skip it and find another
-      - EVERY alternative MUST have a real, working URL from the search results
+    3. URL USAGE (ZERO TOLERANCE POLICY):
+    
+       a) EXACT URL COPY REQUIREMENT:
+          - Copy the URL EXACTLY character-by-character from "REAL PRODUCTS FOUND"
+          - DO NOT modify any part of the URL (path, parameters, domain)
+          - DO NOT combine product name from one result with URL from another
+          - DO NOT add or remove any characters
+          - DO NOT add parameters like "?spm=" or any tracking codes not in the original
+    
+       b) VERIFICATION BEFORE ADDING:
+          - Before adding product_url, find the EXACT URL in the search results above
+          - If you cannot find an EXACT match, DO NOT include that alternative
+          - It is better to return 0 alternatives than to include invalid URLs
+    
+       c) EXAMPLES OF CORRECT USAGE:
+          Search Result: "https://amazon.com/product/B08RQLJRJ3"
+          Your Response: "https://amazon.com/product/B08RQLJRJ3" ✅ (EXACT COPY)
+    
+       d) EXAMPLES OF WRONG USAGE (NEVER DO THIS):
+          ❌ Modifying URL: "https://amazon.com/product/B08RQLJRJ3" → "https://amazon.com/product/B123"
+          ❌ Combining sources: Name from Result #1 + URL from Result #2
+          ❌ Adding parameters: "https://walmart.com/12345" → "https://walmart.com/12345?spm=..."
+          ❌ Inventing URLs: Using a URL not in the search results
+          ❌ Shortening URLs: "https://amazon.com/long/path" → "https://amazon.com/short"
+    
+       e) STRICT VALIDATION:
+          - If URL is not found EXACTLY in search results → SKIP that alternative
+          - Return fewer alternatives rather than including invalid URLs
+          - EVERY alternative MUST have a real, working URL from the search results
 
     4. VALIDATION CHECKLIST (Check each alternative IN THIS ORDER):
       ✓ Is it from the SAME CATEGORY as "${category}"? (If NO, REMOVE IT IMMEDIATELY)
@@ -2207,17 +2326,14 @@ async function analyzeWithGroq(
     const validatedAlternatives = (result.alternatives || [])
       .map((alt) => {
         if (alt?.product_url && typeof alt.product_url === "string") {
-          // ✅ Check if URL exists in Tavily results
+          // ✅ STRICT: Check if URL exists in Tavily results (EXACT match only)
           const urlExists = validUrls.some(
-            (validUrl) =>
-              validUrl === alt.product_url ||
-              (alt.product_url && validUrl.includes(alt.product_url)) ||
-              (alt.product_url && alt.product_url.includes(validUrl))
+            (validUrl) => validUrl === alt.product_url
           );
 
           if (!urlExists) {
             console.log(
-              `⚠️ [VALIDATION] URL not in Tavily results, removed: ${alt.product_url}`
+              `⚠️ [VALIDATION] URL not in Tavily results (exact match required), removed: ${alt.product_url}`
             );
             alt.product_url = null;
             return alt;
