@@ -2147,12 +2147,33 @@ async function analyzeWithGroq(
     }
 
     ═══════════════════════════════════════════════════════════════
+    CRITICAL: ALTERNATIVES ARRAY RULES
+    ═══════════════════════════════════════════════════════════════
+
+    1. ONLY REAL PRODUCTS:
+       - The "alternatives" array should contain ONLY real, specific products from the search results
+       - DO NOT include generic placeholders like "Search more sustainable alternatives"
+       - DO NOT include incomplete objects or fallback suggestions
+       - Each object MUST be a real product with a real URL from Tavily results
+
+    2. ARRAY SIZE:
+       - Return 0 to 4 real products ONLY
+       - If you find only 2 real products, return array with 2 items
+       - If you find 0 real products, return empty array: []
+       - DO NOT pad the array to reach 4 items with generic suggestions
+
+    3. FRONTEND WILL HANDLE FALLBACK:
+       - If you return fewer than 4 alternatives, the frontend will add a "Search on Google" button
+       - Your job is ONLY to return real, validated products
+       - Let the frontend handle the user experience for missing alternatives
+
+    ═══════════════════════════════════════════════════════════════
     FINAL REMINDERS:
     ═══════════════════════════════════════════════════════════════
 
     1. RESPOND ENTIRELY in the detected language from the product name
     2. Use ONLY URLs from the "REAL PRODUCTS FOUND" list above
-    3. If no suitable products found, return empty alternatives array: []
+    3. Return 0-4 REAL products only (no placeholders or generic suggestions)
     4. RETURN ONLY VALID JSON - NO MARKDOWN, NO COMMENTS
 
     Begin analysis now.`;
@@ -2264,35 +2285,15 @@ async function analyzeWithGroq(
     );
 
     // ✅ STEP 2: Enforce domain diversity (reorder for variety)
-    const diverseAlternatives = enforceDomainDiversity(coherentAlternatives);
+    const finalAlternatives = enforceDomainDiversity(coherentAlternatives);
 
-    // ✅ Ensure minimum 4 alternatives
-    const MIN_ALTERNATIVES = 4;
-    if (diverseAlternatives.length < MIN_ALTERNATIVES) {
-      const countryContext =
-        COUNTRY_ECOMMERCE[userCountry] || COUNTRY_ECOMMERCE["US"];
-      const productTypeFallback = productType || "product";
-
-      const needed = MIN_ALTERNATIVES - diverseAlternatives.length;
-      console.log(`⚠️ [FALLBACK] Only ${diverseAlternatives.length} alternatives found, adding ${needed} fallback entries`);
-
-      for (let i = 0; i < needed; i++) {
-        diverseAlternatives.push({
-          name: `Search more sustainable alternatives`,
-          description: `We couldn't find enough specific products, but you can search for sustainable alternatives`,
-          benefits: `Find sustainable ${productTypeFallback} options available in ${countryContext.name}`,
-          sustainability_score: 0,
-          where_to_buy: `Search online`,
-          certifications: [],
-          product_url: null,  // ✅ Set to null - frontend will show "Search on Google" button
-        });
-      }
-
-      console.log(`🔍 [FALLBACK] Added ${needed} fallback alternative(s) with null URLs to reach minimum ${MIN_ALTERNATIVES} alternatives`);
+    console.log(`📊 [FINAL] Returning ${finalAlternatives.length} real product alternatives`);
+    if (finalAlternatives.length < 4) {
+      console.log(`ℹ️ [INFO] Fewer than 4 alternatives found - frontend will add "Search on Google" button`);
     }
 
     // ✅ Final validation: Clean any search engine URLs that might have slipped through
-    result.alternatives = diverseAlternatives.map(alt => {
+    result.alternatives = finalAlternatives.map(alt => {
       if (!isValidEcommerceUrl(alt.product_url)) {
         console.log(`⚠️ [FINAL-VALIDATION] Removing invalid/search URL: ${alt.product_url}`);
         return { ...alt, product_url: null };
@@ -2301,8 +2302,8 @@ async function analyzeWithGroq(
     });
 
     console.log("✅ [FINAL] Validated alternatives:", {
-      count: diverseAlternatives.length,
-      urls: diverseAlternatives.map((a) => a.product_url),
+      count: finalAlternatives.length,
+      urls: finalAlternatives.map((a) => a.product_url),
     });
 
     return result;
