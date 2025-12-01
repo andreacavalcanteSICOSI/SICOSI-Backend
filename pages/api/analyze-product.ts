@@ -1989,6 +1989,15 @@ async function analyzeWithGroq(
           .join("\n")}`
       : "\n\nNO PRODUCTS FOUND - Suggest well-known sustainable brands in the user's country.";
 
+  console.log(`📊 [GROQ] Sending ${validProducts.length} products to Groq for analysis`);
+  if (validProducts.length > 0) {
+    console.log(`📋 [GROQ] Sample products being sent:`);
+    validProducts.slice(0, 3).forEach((p, i) => {
+      console.log(`  ${i + 1}. ${p.title}`);
+      console.log(`     URL: ${p.url}`);
+    });
+  }
+
   const prompt = `You are a sustainability expert analyzing products for users worldwide.
 
     ═══════════════════════════════════════════════════════════════

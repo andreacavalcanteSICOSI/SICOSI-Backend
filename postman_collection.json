@@ -1,0 +1,100 @@
+{
+    "info": {
+        "name": "SICOSI Backend Tests",
+        "_postman_id": "sicosi-backend-tests",
+        "description": "Collection for testing SICOSI backend API endpoints",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "Analyze Product - Camping Tent (BR)",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"productName\": \"Barraca Camping 2/3 Pessoas Joyfox 3500mm Impermeavel Profissional 210×(50+150+50)×115 Cm Tecido Oxford 210d\",\n  \"pageUrl\": \"https://www.mercadolivre.com.br/barraca-camping-23-pessoas-joyfox-3500mm-impermeavel-profissional-2105015050115-cm-tecido-oxford-210d/p/MLB37800539\",\n  \"userCountry\": \"BR\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:3000/api/analyze-product",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "3000",
+                    "path": [
+                        "api",
+                        "analyze-product"
+                    ]
+                },
+                "description": "Test camping tent product from Mercado Livre Brazil. Should return 4 camping tent alternatives with valid URLs."
+            },
+            "response": []
+        },
+        {
+            "name": "Analyze Product - Eyeshadow Palette (PT)",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"productName\": \"Popfeel-Long Lasting Brown Eyeshadow Palette, maquiagem fácil, rosa, 40 cores\",\n  \"pageUrl\": \"https://pt.aliexpress.com/item/1005007209519002.html\",\n  \"userCountry\": \"PT\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:3000/api/analyze-product",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "3000",
+                    "path": [
+                        "api",
+                        "analyze-product"
+                    ]
+                },
+                "description": "Test eyeshadow palette from AliExpress Portugal. Should return 4 eyeshadow palette alternatives (NOT makeup sponges)."
+            },
+            "response": []
+        },
+        {
+            "name": "Analyze Product - Electric Mop (PT)",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"productName\": \"Limpador de esfregão giratório elétrico sem fio automático 2 em 1, limpador doméstico molhado e seco\",\n  \"pageUrl\": \"https://pt.aliexpress.com/item/1005010363587353.html\",\n  \"userCountry\": \"PT\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:3000/api/analyze-product",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "3000",
+                    "path": [
+                        "api",
+                        "analyze-product"
+                    ]
+                },
+                "description": "Test electric mop from AliExpress Portugal. Should return cleaning product alternatives."
+            },
+            "response": []
+        }
+    ]
+}
